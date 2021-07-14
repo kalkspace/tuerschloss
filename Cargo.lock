@@ -843,6 +843,7 @@ name = "tuerschloss"
 version = "0.1.0"
 dependencies = [
  "btleplug",
+ "uuid",
 ]
 
 [[package]]
