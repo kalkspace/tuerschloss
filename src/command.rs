@@ -102,7 +102,7 @@ impl Command {
             Command::RequestData { data } => {
                 out.extend(data);
             }
-            Command::PublicKey { .. } => todo!(),
+            Command::PublicKey { key } => out.extend(key),
             Command::ErrorReport { .. } => unimplemented!(),
         }
 
