@@ -6,8 +6,10 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-btleplug = "0.8.1"
-uuid = "0.8.2"
-tokio = {version = "1.12.0", features = ["rt-multi-thread", "macros"]}
 anyhow = "1.0.44"
+btleplug = "0.8.1"
+bluez-async = "0.4.0"
+crc16 = "0.4.0"
 futures-util = "0.3.17"
+thiserror = "1.0.29"
+tokio = {version = "1.12.0", features = ["rt-multi-thread", "macros", "sync"]}

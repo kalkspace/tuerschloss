@@ -52,7 +52,29 @@ dependencies = [
  "itertools",
  "log",
  "serde",
- "serde-xml-rs",
+ "serde-xml-rs 0.4.1",
+ "serde_derive",
+ "thiserror",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "bluez-async"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "81cc76886c0aad4a0b113c5a1a62a1b911955a5e71af7c5fcc6cdf793ee68abd"
+dependencies = [
+ "async-trait",
+ "bitflags",
+ "bluez-generated",
+ "dbus",
+ "dbus-tokio",
+ "futures",
+ "itertools",
+ "log",
+ "serde",
+ "serde-xml-rs 0.5.1",
  "serde_derive",
  "thiserror",
  "tokio",
@@ -76,7 +98,7 @@ checksum = "50d3bcb8bf1febd9a8628dade48f50cde0de915a966edc353a8cc43569dc99b5"
 dependencies = [
  "async-trait",
  "bitflags",
- "bluez-async",
+ "bluez-async 0.3.1",
  "cocoa",
  "dashmap",
  "dbus",
@@ -176,6 +198,12 @@ dependencies = [
  "foreign-types",
  "libc",
 ]
+
+[[package]]
+name = "crc16"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "338089f42c427b86394a5ee60ff321da23a5c89c9d89514c829687b26359fcff"
 
 [[package]]
 name = "dashmap"
@@ -569,6 +597,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde-xml-rs"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "65162e9059be2f6a3421ebbb4fef3e74b7d9e7c60c50a0e292c6239f19f1edfa"
+dependencies = [
+ "log",
+ "serde",
+ "thiserror",
+ "xml-rs",
+]
+
+[[package]]
 name = "serde_derive"
 version = "1.0.130"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -610,18 +650,18 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "1.0.26"
+version = "1.0.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93119e4feac1cbe6c798c34d3a53ea0026b0b1de6a120deef895137c0529bfe2"
+checksum = "602eca064b2d83369e2b2f34b09c70b605402801927c65c11071ac911d299b88"
 dependencies = [
  "thiserror-impl",
 ]
 
 [[package]]
 name = "thiserror-impl"
-version = "1.0.26"
+version = "1.0.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "060d69a0afe7796bf42e9e2ff91f5ee691fb15c53d38b4b62a9a53eb23164745"
+checksum = "bad553cc2c78e8de258400763a647e80e6d1b31ee237275d756f6836d204494c"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -659,10 +699,12 @@ name = "tuerschloss"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bluez-async 0.4.0",
  "btleplug",
+ "crc16",
  "futures-util",
+ "thiserror",
  "tokio",
- "uuid",
 ]
 
 [[package]]

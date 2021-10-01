@@ -1,88 +1,140 @@
-use std::time::Duration;
-
 use anyhow::anyhow;
-use btleplug::api::{BDAddr, Central, CentralEvent, Manager as _, Peripheral as _, WriteType};
-use btleplug::platform::{Adapter, Manager};
-use futures_util::StreamExt;
-use uuid::Uuid;
+use bluez_async::{
+    BluetoothEvent, BluetoothSession, CharacteristicEvent, DeviceEvent, DeviceInfo, MacAddress,
+};
+use futures_util::{Future, StreamExt};
+use tokio::sync::mpsc;
+
+use crate::command::Command;
+
+mod command;
 
 const LOCK_ADDRESS: [u8; 6] = [0x54, 0xD2, 0x72, 0xAC, 0x8D, 0xC5];
-const PAIRING_SERVICE_UUID: &str = "a92ee101-5501-11e4-916c-0800200c9a66";
+const PAIRING_SERVICE: &str = "a92ee100-5501-11e4-916c-0800200c9a66";
+const PAIRING_SERVICE_GDIO: &str = "a92ee101-5501-11e4-916c-0800200c9a66";
 
 #[tokio::main]
-async fn main() {
-    let pairing_uuid: Uuid = PAIRING_SERVICE_UUID.parse().unwrap();
+async fn main() -> Result<(), anyhow::Error> {
+    let (_, sess) = BluetoothSession::new().await?;
 
-    let lock_address: BDAddr = LOCK_ADDRESS.into();
-    println!("LOCK_ADDRESS: {:?}", lock_address);
+    println!("looking for device");
+    let device = discover_device(&sess).await?;
+    println!("found my device: {:?}", device);
 
-    let adapter = get_bluetooth_adapter().await.unwrap();
-    adapter.start_scan().await.unwrap();
-    let mut events = adapter.events().await.unwrap();
-
-    let mut device_addr = None;
-    while let Some(event) = events.next().await {
-        match event {
-            CentralEvent::DeviceDiscovered(address) => {
-                println!("Discover: {:?}", address);
-                if address == lock_address {
-                    device_addr.replace(address);
-                    println!("Device found!");
-                    break;
+    let mut events = sess.event_stream().await?;
+    let (gdio_tx, mut gdio_rx) = mpsc::channel(100);
+    let watcher = tokio::spawn(async move {
+        while let Some(event) = events.next().await {
+            println!("Got event: {:?}", event);
+            if let BluetoothEvent::Characteristic {
+                event: CharacteristicEvent::Value { value },
+                id: _,
+            } = event
+            {
+                println!("Value: {:02X?}", value);
+                if gdio_tx.send(value).await.is_err() {
+                    eprintln!("failed to send into channel!");
                 }
             }
-            _ => {}
         }
-    }
+    });
 
-    adapter.stop_scan().await.unwrap();
+    retry(5, || sess.connect(&device.id)).await?;
+    println!("connected!");
 
-    let device = adapter.peripheral(device_addr.unwrap()).await.unwrap();
+    // look up characteristic
+    let svc = sess
+        .get_services(&device.id)
+        .await?
+        .into_iter()
+        .find(|s| s.uuid.to_string() == PAIRING_SERVICE)
+        .ok_or_else(|| anyhow!("Pairing service not found"))?;
+    let characteristic = sess
+        .get_characteristics(&svc.id)
+        .await?
+        .into_iter()
+        .find(|c| c.uuid.to_string() == PAIRING_SERVICE_GDIO)
+        .ok_or_else(|| anyhow!("characteristic not found"))?;
+    println!("characteristic found: {:?}", characteristic);
 
-    for _ in 0..=5 {
-        match device.connect().await {
-            Ok(_) => break,
-            Err(e) => println!("Error: {}", e),
-        }
-    }
+    sess.start_notify(&characteristic.id).await?;
 
-    let characteristics = device.discover_characteristics().await.unwrap();
+    let pub_key_request = Command::RequestData {
+        data: vec![0x03, 0x00],
+    };
+    sess.write_characteristic_value(&characteristic.id, pub_key_request.into_bytes())
+        .await?;
+    println!("value written");
 
-    let mut pairing_gdio = None;
-    for characteristic in characteristics {
-        println!("UUID: {}", characteristic.uuid);
-        if characteristic.uuid == pairing_uuid {
-            println!("found");
-            pairing_gdio = Some(characteristic);
-        }
-    }
-
-    let pairing_gdio = pairing_gdio.unwrap();
-    // device.on_notification(Box::new(|value| println!("{:?}", value)));
-    device.subscribe(&pairing_gdio).await.unwrap();
-
-    let mut pub_key_request = vec![0x01, 0x00, 0x03, 0x00, 0x27, 0xA7];
-    pub_key_request.reverse();
-
-    device
-        .write(&pairing_gdio, &pub_key_request, WriteType::WithResponse)
+    let resp = gdio_rx
+        .recv()
         .await
-        .unwrap();
+        .ok_or_else(|| anyhow!("GDIO channel closed"))?;
+    let cmd = Command::parse(&resp)?;
+    println!("Got resp: {:?}", cmd);
 
-    println!("write done");
-
-    std::thread::sleep(Duration::from_secs(30));
+    watcher.await?;
+    sess.stop_notify(&characteristic.id).await?;
+    Ok(())
 }
 
-async fn get_bluetooth_adapter() -> Result<Adapter, anyhow::Error> {
-    let manager = Manager::new().await?;
+async fn discover_device(sess: &BluetoothSession) -> Result<DeviceInfo, anyhow::Error> {
+    let lock_mac: MacAddress = LOCK_ADDRESS.into();
 
-    let mut list_adapters = manager.adapters().await?;
+    let device = sess
+        .get_devices()
+        .await?
+        .into_iter()
+        .find(|d| d.mac_address == lock_mac);
 
-    let adapter = list_adapters
-        .drain(0..)
-        .next()
-        .ok_or_else(|| anyhow!("Kein Bluetooth-Adapter vorhanden."))?;
+    let device = match device {
+        Some(dev) => dev,
+        None => {
+            println!("starting to scan...");
+            sess.start_discovery().await?;
 
-    Ok(adapter)
+            let events = sess.event_stream().await?;
+            let info = events
+                .filter_map(|ev| {
+                    println!("got event: {:?}", ev);
+                    Box::pin(async {
+                        if let BluetoothEvent::Device {
+                            event: DeviceEvent::Discovered,
+                            id,
+                        } = ev
+                        {
+                            println!("Discovered {}", id);
+                            let info = sess.get_device_info(&id).await.unwrap();
+                            if info.mac_address == lock_mac {
+                                return Some(info);
+                            }
+                        }
+                        None
+                    })
+                })
+                .next()
+                .await
+                .ok_or_else(|| anyhow!("Device not found!"))?;
+
+            sess.stop_discovery().await?;
+
+            info
+        }
+    };
+    Ok(device)
+}
+
+async fn retry<F, Fut, O, E>(limit: usize, mut f: F) -> Result<O, anyhow::Error>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<O, E>>,
+    E: std::error::Error,
+{
+    for _ in 0..limit {
+        match f().await {
+            Ok(r) => return Ok(r),
+            Err(e) => eprintln!("Retrying after error: {:?}", e),
+        }
+    }
+    Err(anyhow!("Retry limit reached"))
 }
