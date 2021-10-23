@@ -30,6 +30,7 @@ const APP_NAME: &str = "KalkSpace";
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     sodiumoxide::init().map_err(|_| anyhow!("Failed to initialize sodiumoxide..."))?;
+    let mut rng = rand::thread_rng();
 
     // 5. CL generates own keypair
     let (pub_key, secret_key) = get_keypair().await?;
@@ -124,7 +125,11 @@ async fn main() -> Result<(), anyhow::Error> {
         _ => return Err(anyhow!("Unknown response...")),
     };
 
-    let authenticator = calculate_authenticator(pub_key, lock_pub_key, shared_key, challenge);
+    let authenticator = calculate_authenticator(
+        &shared_key,
+        pub_key.as_ref().iter().chain(lock_pub_key.as_ref()),
+        &challenge,
+    );
 
     // 13. CL writes Authorization Authenticator command with authenticator a to GDIO
     let auth_authenticator = Command::AuthorizationAuthenticator(authenticator);
@@ -150,20 +155,105 @@ async fn main() -> Result<(), anyhow::Error> {
         _ => return Err(anyhow!("Unknown response...")),
     };
 
-    let authenticator = calculate_authenticator(pub_key, lock_pub_key, shared_key, challenge);
-
-    let mut name = [0u8; 32];
+    // serialize name
+    let mut name = [0; 32];
     let mut name_ref: &mut [u8] = &mut name;
-    name_ref.write(APP_NAME.as_bytes());
+    name_ref.write(APP_NAME.as_bytes()).unwrap();
+
+    // compute nonce
+    let mut nonce = [0; 32];
+    rng.fill(&mut nonce);
+
+    // serialize id_type
+    let id_type = command::IdType::App;
+    let id_type_num = id_type.into();
+
+    // serialize app_id
+    let app_id_bytes = APP_ID.to_be_bytes();
+
+    // concatenate authenticator parameter
+    let payload = Some(&id_type_num)
+        .into_iter()
+        .chain(app_id_bytes.iter())
+        .chain(name.iter())
+        .chain(&nonce);
+
+    // calculate authenticator from partial payload and nonce
+    let authenticator = calculate_authenticator(&shared_key, payload, &challenge);
     let auth_data = Command::AuthorizationData {
         authenticator,
-        id_type: command::IdType::App,
+        id_type,
         app_id: APP_ID,
-        name: todo!(),
-        nonce: todo!(),
+        name,
+        nonce,
     };
 
-    watcher.await?;
+    let auth_data_bytes = auth_data.into_bytes();
+    sess.write_characteristic_value(&characteristic.id, auth_data_bytes)
+        .await?;
+
+    // 19. SL sends Authorization-ID command via multiple indications on GDIO
+    let resp = gdio_rx
+        .recv()
+        .await
+        .ok_or_else(|| anyhow!("GDIO channel closed"))?;
+    println!("Value: {:?}", resp);
+    let cmd = Command::parse(&resp)?;
+    println!("Got response: {:?}", cmd);
+
+    // 20. CL verifies the received authenticator
+    let (lock_nonce, authorization_id) = match cmd {
+        Command::AuthorizationId {
+            authenticator,
+            authorization_id,
+            uuid,
+            nonce: lock_nonce,
+        } => {
+            let authorization_id_bytes = authorization_id.to_be_bytes();
+            let payload = authorization_id_bytes
+                .iter()
+                .chain(uuid.iter())
+                .chain(&lock_nonce);
+            let expected_authenticator = calculate_authenticator(&shared_key, payload, &nonce);
+            if authenticator != expected_authenticator {
+                return Err(anyhow!("authenticator verification failed..."));
+            }
+            (lock_nonce, authorization_id)
+        }
+        Command::ErrorReport { code, .. } => return Err(code.into()),
+        _ => return Err(anyhow!("Unexpected command...")),
+    };
+
+    // 21. CL writes Authorization-ID Confirmation command to GDIO
+    let authenticator =
+        calculate_authenticator(&shared_key, &authorization_id.to_be_bytes(), &lock_nonce);
+    let auth_id_confirm = Command::AuthorizationIdConfirmation {
+        authenticator,
+        authorization_id,
+    };
+    sess.write_characteristic_value(&characteristic.id, auth_id_confirm.into_bytes())
+        .await?;
+
+    // 22. SL sends Status COMPLETE via multiple indications on GDIO
+    let resp = gdio_rx
+        .recv()
+        .await
+        .ok_or_else(|| anyhow!("GDIO channel closed"))?;
+    println!("Value: {:?}", resp);
+    let cmd = Command::parse(&resp)?;
+    println!("Got response: {:?}", cmd);
+
+    match cmd {
+        Command::Status(code) => match code {
+            command::StatusCode::Complete => (),
+            command::StatusCode::Accepted => {
+                return Err(anyhow!("Expect status to be complete..."))
+            }
+        },
+        Command::ErrorReport { code, .. } => return Err(code.into()),
+        _ => return Err(anyhow!("Unexpected response...")),
+    }
+
     sess.stop_notify(&characteristic.id).await?;
     Ok(())
 }
@@ -265,17 +355,15 @@ async fn get_keypair() -> Result<(PublicKey, SecretKey), anyhow::Error> {
     Ok((pub_key, secret_key))
 }
 
-fn calculate_authenticator(
-    pub_key: PublicKey,
-    lock_pub_key: PublicKey,
-    shared_key: PrecomputedKey,
-    challenge: [u8; 32],
+fn calculate_authenticator<'a>(
+    shared_key: &PrecomputedKey,
+    payload: impl IntoIterator<Item = &'a u8>,
+    challenge: &[u8; 32],
 ) -> [u8; 32] {
     // 10. CL concatenates its own public key with SL’s public key and the challenge to value r
     let mut r = Vec::new();
-    r.extend_from_slice(pub_key.as_ref());
-    r.extend_from_slice(lock_pub_key.as_ref());
-    r.extend_from_slice(&challenge);
+    r.extend(payload.into_iter());
+    r.extend_from_slice(challenge);
     println!("10 done");
 
     // 11. CL calculates the authenticator a of r using function h1

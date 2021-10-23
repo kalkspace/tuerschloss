@@ -43,7 +43,7 @@ impl TryFrom<u8> for ErrorCode {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum IdType {
     App,
     Bridge,
@@ -62,6 +62,12 @@ impl From<IdType> for u8 {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum StatusCode {
+    Complete,
+    Accepted,
+}
+
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Command {
@@ -76,10 +82,21 @@ pub enum Command {
         name: [u8; 32],
         nonce: [u8; 32],
     },
+    AuthorizationId {
+        authenticator: [u8; 32],
+        authorization_id: u32,
+        uuid: [u8; 16],
+        nonce: [u8; 32],
+    },
+    Status(StatusCode),
     // missing some
     ErrorReport {
         code: ErrorCode,
         command_ident: u16,
+    },
+    AuthorizationIdConfirmation {
+        authenticator: [u8; 32],
+        authorization_id: u32,
     },
     // missing more
 }
@@ -109,6 +126,45 @@ impl Command {
             0x0004 => Self::Challenge(bytes.into()),
             0x0005 => todo!(),
             0x0006 => todo!(),
+            0x0007 => {
+                let (authenticator, bytes) = bytes.split_at(32);
+                let authenticator = authenticator
+                    .try_into()
+                    .map_err(|_| anyhow!("Not enough bytes to read authenticator."))?;
+                let (authorization_id, bytes) = bytes.split_at(4);
+                let authorization_id = u32::from_be_bytes(
+                    authorization_id
+                        .try_into()
+                        .map_err(|_| anyhow!("Not enough bytes to read authorization id."))?,
+                );
+                let (uuid, bytes) = bytes.split_at(16);
+                let uuid = uuid
+                    .try_into()
+                    .map_err(|_| anyhow!("Not enough bytes to read uuid"))?;
+                let (nonce, _bytes) = bytes.split_at(32);
+                let nonce = nonce
+                    .try_into()
+                    .map_err(|_| anyhow!("Not enough bytes to read nonce."))?;
+                Self::AuthorizationId {
+                    authenticator,
+                    authorization_id,
+                    uuid,
+                    nonce,
+                }
+            }
+            0x000e => {
+                let code = bytes
+                    .first()
+                    .ok_or_else(|| anyhow!("Missing status code..."))?;
+
+                let status_code = match code {
+                    0 => StatusCode::Complete,
+                    1 => StatusCode::Accepted,
+                    _ => return Err(anyhow!("Invalid status code...")),
+                };
+
+                Self::Status(status_code)
+            }
             0x0012 => {
                 let (code, command_ident) = bytes.split_at(1);
                 let code = code
@@ -122,6 +178,7 @@ impl Command {
                     command_ident,
                 }
             }
+            0x001e => todo!(),
             _ => return Err(anyhow!("unknown command code")),
         };
 
@@ -152,7 +209,16 @@ impl Command {
                 out.extend(name);
                 out.extend(nonce);
             }
+            Command::AuthorizationId { .. } => unimplemented!(),
+            Command::Status(_) => todo!(),
             Command::ErrorReport { .. } => unimplemented!(),
+            Command::AuthorizationIdConfirmation {
+                authenticator,
+                authorization_id,
+            } => {
+                out.extend(authenticator);
+                out.extend(authorization_id.to_be_bytes());
+            }
         }
 
         let crc = Self::crc(&out);
@@ -168,7 +234,10 @@ impl Command {
             Command::Challenge(_) => 0x4,
             Command::AuthorizationAuthenticator(_) => 0x5,
             Command::AuthorizationData { .. } => 0x6,
+            Command::AuthorizationId { .. } => 0x7,
+            Command::Status(_) => 0xe,
             Command::ErrorReport { .. } => 0x12,
+            Command::AuthorizationIdConfirmation { .. } => 0x1e,
         }
     }
 
