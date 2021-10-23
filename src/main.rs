@@ -1,9 +1,16 @@
+use std::io::Write;
+use std::{any, convert::TryInto};
+
 use anyhow::anyhow;
 use bluez_async::{
     BluetoothEvent, BluetoothSession, CharacteristicEvent, DeviceEvent, DeviceInfo, MacAddress,
 };
 use futures_util::{Future, StreamExt};
-use sodiumoxide::crypto::box_::{gen_keypair, precompute, PublicKey, SecretKey};
+use rand::Rng;
+use sodiumoxide::crypto::{
+    auth::{self, hmacsha256},
+    box_::{gen_keypair, precompute, PrecomputedKey, PublicKey, SecretKey},
+};
 use tokio::{
     fs,
     io::{AsyncReadExt, AsyncWriteExt},
@@ -17,11 +24,14 @@ mod command;
 const LOCK_ADDRESS: [u8; 6] = [0x54, 0xD2, 0x72, 0xAC, 0x8D, 0xC5];
 const PAIRING_SERVICE: &str = "a92ee100-5501-11e4-916c-0800200c9a66";
 const PAIRING_SERVICE_GDIO: &str = "a92ee101-5501-11e4-916c-0800200c9a66";
+const APP_ID: u32 = 0x4d9edba9;
+const APP_NAME: &str = "KalkSpace";
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     sodiumoxide::init().map_err(|_| anyhow!("Failed to initialize sodiumoxide..."))?;
 
+    // 5. CL generates own keypair
     let (pub_key, secret_key) = get_keypair().await?;
 
     let (_, sess) = BluetoothSession::new().await?;
@@ -66,46 +76,92 @@ async fn main() -> Result<(), anyhow::Error> {
         .ok_or_else(|| anyhow!("characteristic not found"))?;
     println!("characteristic found: {:?}", characteristic);
 
+    // 2. CL registers itself for indications on GDIO
     sess.start_notify(&characteristic.id).await?;
 
-    let pub_key_request = Command::RequestData {
-        data: vec![0x03, 0x00],
-    };
+    // 3. CL writes Request Data command with Public Key command identifier to GDIO
+    let pub_key_request = Command::RequestData(vec![0x03, 0x00]);
     sess.write_characteristic_value(&characteristic.id, pub_key_request.into_bytes())
         .await?;
     println!("value written");
 
+    // 4. SL sends its public key via multiple indications on GDIO
     let resp = gdio_rx
         .recv()
         .await
         .ok_or_else(|| anyhow!("GDIO channel closed"))?;
     let cmd = Command::parse(&resp)?;
     let lock_pub_key = match cmd {
-        Command::PublicKey { key } => {
+        Command::PublicKey(key) => {
             PublicKey::from_slice(&key).ok_or_else(|| anyhow!("Invalid key..."))?
         }
-        Command::ErrorReport {
-            code,
-            command_ident,
-        } => return Err(code.into()),
+        Command::ErrorReport { code, .. } => return Err(code.into()),
         _ => return Err(anyhow!("Unknow command...")),
     };
 
-    // compute shared key via diffie-hellman
+    // 7. Both sides calculate DH Key k using function dh1
+    // 8. Both sides derive a long term shared secret key s from k using function kdf1
     let shared_key = precompute(&lock_pub_key, &secret_key);
 
-    let send_pub_key = Command::PublicKey {
-        key: pub_key.as_ref().into(),
-    };
+    // 6. CL writes Public Key command to GDIO
+    let send_pub_key = Command::PublicKey(pub_key.as_ref().into());
     sess.write_characteristic_value(&characteristic.id, send_pub_key.into_bytes())
         .await?;
 
+    // 9. SL sends Challenge command via multiple indications on GDIO
     let resp = gdio_rx
         .recv()
         .await
         .ok_or_else(|| anyhow!("GDIO channel closed"))?;
     let cmd = Command::parse(&resp)?;
     println!("Got response: {:?}", cmd);
+
+    let challenge = match cmd {
+        Command::Challenge(challenge) => challenge.try_into().map_err(|c: Vec<u8>| {
+            anyhow!("Expected challenge to be 32 bytes, got {} bytes", c.len())
+        })?,
+        Command::ErrorReport { code, .. } => return Err(code.into()),
+        _ => return Err(anyhow!("Unknown response...")),
+    };
+
+    let authenticator = calculate_authenticator(pub_key, lock_pub_key, shared_key, challenge);
+
+    // 13. CL writes Authorization Authenticator command with authenticator a to GDIO
+    let auth_authenticator = Command::AuthorizationAuthenticator(authenticator);
+    sess.write_characteristic_value(&characteristic.id, auth_authenticator.into_bytes())
+        .await?;
+    println!("13 done");
+
+    // 15. SL sends Challenge command via multiple indications on GDIO
+    let resp = gdio_rx
+        .recv()
+        .await
+        .ok_or_else(|| anyhow!("GDIO channel closed"))?;
+    let cmd = Command::parse(&resp)?;
+    println!("Got response: {:?}", cmd);
+    println!("15 done");
+
+    // 16. CL writes Authorization Data command to GDIO
+    let challenge = match cmd {
+        Command::Challenge(challenge) => challenge.try_into().map_err(|c: Vec<u8>| {
+            anyhow!("Expected challenge to be 32 bytes, got {} bytes", c.len())
+        })?,
+        Command::ErrorReport { code, .. } => return Err(code.into()),
+        _ => return Err(anyhow!("Unknown response...")),
+    };
+
+    let authenticator = calculate_authenticator(pub_key, lock_pub_key, shared_key, challenge);
+
+    let mut name = [0u8; 32];
+    let mut name_ref: &mut [u8] = &mut name;
+    name_ref.write(APP_NAME.as_bytes());
+    let auth_data = Command::AuthorizationData {
+        authenticator,
+        id_type: command::IdType::App,
+        app_id: APP_ID,
+        name: todo!(),
+        nonce: todo!(),
+    };
 
     watcher.await?;
     sess.stop_notify(&characteristic.id).await?;
@@ -207,4 +263,25 @@ async fn get_keypair() -> Result<(PublicKey, SecretKey), anyhow::Error> {
     secret_key_file.write_all(secret_key.as_ref()).await?;
 
     Ok((pub_key, secret_key))
+}
+
+fn calculate_authenticator(
+    pub_key: PublicKey,
+    lock_pub_key: PublicKey,
+    shared_key: PrecomputedKey,
+    challenge: [u8; 32],
+) -> [u8; 32] {
+    // 10. CL concatenates its own public key with SL’s public key and the challenge to value r
+    let mut r = Vec::new();
+    r.extend_from_slice(pub_key.as_ref());
+    r.extend_from_slice(lock_pub_key.as_ref());
+    r.extend_from_slice(&challenge);
+    println!("10 done");
+
+    // 11. CL calculates the authenticator a of r using function h1
+    let auth_key = hmacsha256::Key::from_slice(shared_key.as_ref()).unwrap();
+    let authenticator = hmacsha256::authenticate(&r, &auth_key);
+    println!("11 done");
+
+    authenticator.0
 }

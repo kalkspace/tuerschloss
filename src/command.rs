@@ -44,12 +44,43 @@ impl TryFrom<u8> for ErrorCode {
 }
 
 #[derive(Debug)]
+pub enum IdType {
+    App,
+    Bridge,
+    Fob,
+    KeyPad,
+}
+
+impl From<IdType> for u8 {
+    fn from(id_t: IdType) -> Self {
+        match id_t {
+            IdType::App => 0,
+            IdType::Bridge => 1,
+            IdType::Fob => 2,
+            IdType::KeyPad => 3,
+        }
+    }
+}
+
+#[derive(Debug)]
 #[non_exhaustive]
 pub enum Command {
-    RequestData { data: Vec<u8> },
-    PublicKey { key: Vec<u8> },
+    RequestData(Vec<u8>),
+    PublicKey(Vec<u8>),
+    Challenge(Vec<u8>),
+    AuthorizationAuthenticator([u8; 32]),
+    AuthorizationData {
+        authenticator: [u8; 32],
+        id_type: IdType,
+        app_id: u32,
+        name: [u8; 32],
+        nonce: [u8; 32],
+    },
     // missing some
-    ErrorReport { code: ErrorCode, command_ident: u16 },
+    ErrorReport {
+        code: ErrorCode,
+        command_ident: u16,
+    },
     // missing more
 }
 
@@ -73,8 +104,11 @@ impl Command {
         let id = u16::from_le_bytes(id);
 
         let cmd = match id {
-            0x0001 => Self::RequestData { data: bytes.into() },
-            0x0003 => Self::PublicKey { key: bytes.into() },
+            0x0001 => Self::RequestData(bytes.into()),
+            0x0003 => Self::PublicKey(bytes.into()),
+            0x0004 => Self::Challenge(bytes.into()),
+            0x0005 => todo!(),
+            0x0006 => todo!(),
             0x0012 => {
                 let (code, command_ident) = bytes.split_at(1);
                 let code = code
@@ -99,10 +133,25 @@ impl Command {
         out.extend(self.id().to_le_bytes());
 
         match self {
-            Command::RequestData { data } => {
+            Command::RequestData(data) => {
                 out.extend(data);
             }
-            Command::PublicKey { key } => out.extend(key),
+            Command::PublicKey(key) => out.extend(key),
+            Command::Challenge(challenge) => out.extend(challenge),
+            Command::AuthorizationAuthenticator(authenticator) => out.extend(authenticator),
+            Command::AuthorizationData {
+                authenticator,
+                id_type,
+                app_id,
+                name,
+                nonce,
+            } => {
+                out.extend(authenticator);
+                out.push(id_type.into());
+                out.extend(app_id.to_be_bytes());
+                out.extend(name);
+                out.extend(nonce);
+            }
             Command::ErrorReport { .. } => unimplemented!(),
         }
 
@@ -114,8 +163,11 @@ impl Command {
 
     fn id(&self) -> u16 {
         match self {
-            Command::RequestData { .. } => 0x1,
-            Command::PublicKey { .. } => 0x3,
+            Command::RequestData(_) => 0x1,
+            Command::PublicKey(_) => 0x3,
+            Command::Challenge(_) => 0x4,
+            Command::AuthorizationAuthenticator(_) => 0x5,
+            Command::AuthorizationData { .. } => 0x6,
             Command::ErrorReport { .. } => 0x12,
         }
     }
@@ -138,9 +190,7 @@ mod test {
 
     #[test]
     fn serialize() {
-        let cmd = Command::RequestData {
-            data: vec![0x03, 0x00],
-        };
+        let cmd = Command::RequestData(vec![0x03, 0x00]);
         let bytes = cmd.into_bytes();
         assert_eq!(&[0x01, 0x00, 0x03, 0x00, 0x27, 0xA7], bytes.as_ref());
     }
