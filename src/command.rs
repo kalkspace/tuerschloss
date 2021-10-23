@@ -43,13 +43,61 @@ impl TryFrom<u8> for ErrorCode {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum IdType {
+    App,
+    Bridge,
+    Fob,
+    KeyPad,
+}
+
+impl From<IdType> for u8 {
+    fn from(id_t: IdType) -> Self {
+        match id_t {
+            IdType::App => 0,
+            IdType::Bridge => 1,
+            IdType::Fob => 2,
+            IdType::KeyPad => 3,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum StatusCode {
+    Complete,
+    Accepted,
+}
+
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Command {
-    RequestData { data: Vec<u8> },
-    PublicKey { key: Vec<u8> },
+    RequestData(Vec<u8>),
+    PublicKey(Vec<u8>),
+    Challenge(Vec<u8>),
+    AuthorizationAuthenticator([u8; 32]),
+    AuthorizationData {
+        authenticator: [u8; 32],
+        id_type: IdType,
+        app_id: u32,
+        name: [u8; 32],
+        nonce: [u8; 32],
+    },
+    AuthorizationId {
+        authenticator: [u8; 32],
+        authorization_id: u32,
+        uuid: [u8; 16],
+        nonce: [u8; 32],
+    },
+    Status(StatusCode),
     // missing some
-    ErrorReport { code: ErrorCode, command_ident: u16 },
+    ErrorReport {
+        code: ErrorCode,
+        command_ident: u16,
+    },
+    AuthorizationIdConfirmation {
+        authenticator: [u8; 32],
+        authorization_id: u32,
+    },
     // missing more
 }
 
@@ -73,8 +121,50 @@ impl Command {
         let id = u16::from_le_bytes(id);
 
         let cmd = match id {
-            0x0001 => Self::RequestData { data: bytes.into() },
-            0x0003 => Self::PublicKey { key: bytes.into() },
+            0x0001 => Self::RequestData(bytes.into()),
+            0x0003 => Self::PublicKey(bytes.into()),
+            0x0004 => Self::Challenge(bytes.into()),
+            0x0005 => todo!(),
+            0x0006 => todo!(),
+            0x0007 => {
+                let (authenticator, bytes) = bytes.split_at(32);
+                let authenticator = authenticator
+                    .try_into()
+                    .map_err(|_| anyhow!("Not enough bytes to read authenticator."))?;
+                let (authorization_id, bytes) = bytes.split_at(4);
+                let authorization_id = u32::from_be_bytes(
+                    authorization_id
+                        .try_into()
+                        .map_err(|_| anyhow!("Not enough bytes to read authorization id."))?,
+                );
+                let (uuid, bytes) = bytes.split_at(16);
+                let uuid = uuid
+                    .try_into()
+                    .map_err(|_| anyhow!("Not enough bytes to read uuid"))?;
+                let (nonce, _bytes) = bytes.split_at(32);
+                let nonce = nonce
+                    .try_into()
+                    .map_err(|_| anyhow!("Not enough bytes to read nonce."))?;
+                Self::AuthorizationId {
+                    authenticator,
+                    authorization_id,
+                    uuid,
+                    nonce,
+                }
+            }
+            0x000e => {
+                let code = bytes
+                    .first()
+                    .ok_or_else(|| anyhow!("Missing status code..."))?;
+
+                let status_code = match code {
+                    0 => StatusCode::Complete,
+                    1 => StatusCode::Accepted,
+                    _ => return Err(anyhow!("Invalid status code...")),
+                };
+
+                Self::Status(status_code)
+            }
             0x0012 => {
                 let (code, command_ident) = bytes.split_at(1);
                 let code = code
@@ -88,6 +178,7 @@ impl Command {
                     command_ident,
                 }
             }
+            0x001e => todo!(),
             _ => return Err(anyhow!("unknown command code")),
         };
 
@@ -99,11 +190,35 @@ impl Command {
         out.extend(self.id().to_le_bytes());
 
         match self {
-            Command::RequestData { data } => {
+            Command::RequestData(data) => {
                 out.extend(data);
             }
-            Command::PublicKey { key } => out.extend(key),
+            Command::PublicKey(key) => out.extend(key),
+            Command::Challenge(challenge) => out.extend(challenge),
+            Command::AuthorizationAuthenticator(authenticator) => out.extend(authenticator),
+            Command::AuthorizationData {
+                authenticator,
+                id_type,
+                app_id,
+                name,
+                nonce,
+            } => {
+                out.extend(authenticator);
+                out.push(id_type.into());
+                out.extend(app_id.to_be_bytes());
+                out.extend(name);
+                out.extend(nonce);
+            }
+            Command::AuthorizationId { .. } => unimplemented!(),
+            Command::Status(_) => todo!(),
             Command::ErrorReport { .. } => unimplemented!(),
+            Command::AuthorizationIdConfirmation {
+                authenticator,
+                authorization_id,
+            } => {
+                out.extend(authenticator);
+                out.extend(authorization_id.to_be_bytes());
+            }
         }
 
         let crc = Self::crc(&out);
@@ -114,9 +229,15 @@ impl Command {
 
     fn id(&self) -> u16 {
         match self {
-            Command::RequestData { .. } => 0x1,
-            Command::PublicKey { .. } => 0x3,
+            Command::RequestData(_) => 0x1,
+            Command::PublicKey(_) => 0x3,
+            Command::Challenge(_) => 0x4,
+            Command::AuthorizationAuthenticator(_) => 0x5,
+            Command::AuthorizationData { .. } => 0x6,
+            Command::AuthorizationId { .. } => 0x7,
+            Command::Status(_) => 0xe,
             Command::ErrorReport { .. } => 0x12,
+            Command::AuthorizationIdConfirmation { .. } => 0x1e,
         }
     }
 
@@ -138,9 +259,7 @@ mod test {
 
     #[test]
     fn serialize() {
-        let cmd = Command::RequestData {
-            data: vec![0x03, 0x00],
-        };
+        let cmd = Command::RequestData(vec![0x03, 0x00]);
         let bytes = cmd.into_bytes();
         assert_eq!(&[0x01, 0x00, 0x03, 0x00, 0x27, 0xA7], bytes.as_ref());
     }
