@@ -8,16 +8,28 @@ use sodiumoxide::crypto::{
 };
 
 use crate::{
-    client::CharacteristicClient,
+    client::{CharacteristicClient, Client},
     command::{self, Command},
     APP_ID, APP_NAME,
 };
+
+const PAIRING_SERVICE: &str = "a92ee100-5501-11e4-916c-0800200c9a66";
+const PAIRING_SERVICE_GDIO: &str = "a92ee101-5501-11e4-916c-0800200c9a66";
 
 pub struct PairingClient {
     client: CharacteristicClient,
 }
 
 impl PairingClient {
+    pub async fn from_client(client: Client) -> Result<Self, anyhow::Error> {
+        let pairing_client = client
+            .with_characteristic(PAIRING_SERVICE, PAIRING_SERVICE_GDIO)
+            .await?
+            .into();
+
+        Ok(pairing_client)
+    }
+
     pub async fn pair(&mut self) -> Result<(), anyhow::Error> {
         // 5. CL generates own keypair
         let (pub_key, secret_key) = gen_keypair();
