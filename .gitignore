@@ -1,3 +1,4 @@
 /target
 pub-key
 secret-key
+auth-info.json

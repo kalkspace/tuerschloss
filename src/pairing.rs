@@ -1,11 +1,15 @@
 use std::{convert::TryInto, io::Write};
 
 use anyhow::anyhow;
+use base64::STANDARD;
+use base64_serde::base64_serde_type;
 use rand::Rng;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sodiumoxide::crypto::{
     auth::hmacsha256,
-    box_::{gen_keypair, precompute, PrecomputedKey, PublicKey},
+    box_::{gen_keypair, precompute, PrecomputedKey, PublicKey, SecretKey},
 };
+use tokio::{fs::File, io::AsyncWriteExt};
 
 use crate::{
     client::{CharacteristicClient, Client},
@@ -20,6 +24,18 @@ pub struct PairingClient {
     client: CharacteristicClient,
 }
 
+base64_serde_type!(Base64Serde, STANDARD);
+
+#[derive(Serialize, Deserialize)]
+pub struct AuthInfo {
+    authorization_id: u32,
+    #[serde(
+        serialize_with = "serialize_secret_key",
+        deserialize_with = "deserialize_secret_key"
+    )]
+    secret_key: SecretKey,
+}
+
 impl PairingClient {
     pub async fn from_client(client: Client) -> Result<Self, anyhow::Error> {
         let pairing_client = client
@@ -30,7 +46,7 @@ impl PairingClient {
         Ok(pairing_client)
     }
 
-    pub async fn pair(&mut self) -> Result<(), anyhow::Error> {
+    pub async fn pair(&mut self) -> Result<AuthInfo, anyhow::Error> {
         // 5. CL generates own keypair
         let (pub_key, secret_key) = gen_keypair();
 
@@ -186,7 +202,10 @@ impl PairingClient {
             _ => return Err(anyhow!("Unexpected response...")),
         }
 
-        Ok(())
+        Ok(AuthInfo {
+            authorization_id,
+            secret_key,
+        })
     }
 
     fn calculate_authenticator<'a>(
@@ -215,4 +234,32 @@ impl From<CharacteristicClient> for PairingClient {
             client: characteristic_client,
         }
     }
+}
+
+impl AuthInfo {
+    pub async fn write_to_file(&self, file_name: &str) -> Result<(), anyhow::Error> {
+        let mut file = File::create(file_name).await?;
+        let encoded_info = serde_json::to_string_pretty(self)?;
+        file.write_all(encoded_info.as_ref()).await?;
+        Ok(())
+    }
+}
+
+fn serialize_secret_key<S>(key: &SecretKey, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&base64::encode(key))
+}
+
+fn deserialize_secret_key<'de, D>(deserializer: D) -> Result<SecretKey, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let encoded = String::deserialize(deserializer)?;
+    let secret_key_bytes = base64::decode(encoded).map_err(|e| serde::de::Error::custom(e))?;
+    let secret_key = SecretKey::from_slice(&secret_key_bytes)
+        .ok_or_else(|| serde::de::Error::custom("Invalid secret key"))?;
+
+    Ok(secret_key)
 }

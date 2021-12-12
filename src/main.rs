@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use pairing::PairingClient;
+use pairing::{AuthInfo, PairingClient};
 
 use crate::client::UnconnectedClient;
 
@@ -19,10 +19,12 @@ async fn main() -> Result<(), anyhow::Error> {
         .connect()
         .await?;
 
-    PairingClient::from_client(connected_client)
+    let auth_info = PairingClient::from_client(connected_client)
         .await?
         .pair()
         .await?;
+
+    AuthInfo::write_to_file(&auth_info, "auth-info.json").await?;
 
     Ok(())
 }
