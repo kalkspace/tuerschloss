@@ -1,6 +1,9 @@
 use anyhow::anyhow;
 use crc16::CCITT_FALSE;
-use std::convert::{TryFrom, TryInto};
+use std::{
+    convert::{TryFrom, TryInto},
+    io::Write,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ErrorCode {
@@ -69,6 +72,35 @@ pub enum StatusCode {
 }
 
 #[derive(Debug)]
+pub enum LockAction {
+    Unlock,
+    Lock,
+    Unlatch,
+    LockNGo,
+    LockNGoWithUnlatch,
+    FullLock,
+    FobAction1,
+    FobAction2,
+    FobAction3,
+}
+
+impl From<LockAction> for u8 {
+    fn from(lock_action: LockAction) -> Self {
+        match lock_action {
+            LockAction::Unlock => 1,
+            LockAction::Lock => 2,
+            LockAction::Unlatch => 3,
+            LockAction::LockNGo => 4,
+            LockAction::LockNGoWithUnlatch => 5,
+            LockAction::FullLock => 6,
+            LockAction::FobAction1 => 0x81,
+            LockAction::FobAction2 => 0x82,
+            LockAction::FobAction3 => 0x83,
+        }
+    }
+}
+
+#[derive(Debug)]
 #[non_exhaustive]
 pub enum Command {
     RequestData(Vec<u8>),
@@ -86,6 +118,13 @@ pub enum Command {
         authenticator: [u8; 32],
         authorization_id: u32,
         uuid: [u8; 16],
+        nonce: [u8; 32],
+    },
+    LockAction {
+        action: LockAction,
+        app_id: u32,
+        flags: u8,
+        name_suffix: String,
         nonce: [u8; 32],
     },
     Status(StatusCode),
@@ -210,6 +249,24 @@ impl Command {
                 out.extend(nonce);
             }
             Command::AuthorizationId { .. } => unimplemented!(),
+            Command::LockAction {
+                action,
+                app_id,
+                flags,
+                name_suffix,
+                nonce,
+            } => {
+                out.push(action.into());
+                out.extend(app_id.to_be_bytes());
+                out.push(flags);
+
+                let mut name = [0; 20];
+                let mut name_ref: &mut [u8] = &mut name;
+                name_ref.write(name_suffix.as_bytes()).unwrap();
+                out.extend(name);
+
+                out.extend(nonce);
+            }
             Command::Status(_) => todo!(),
             Command::ErrorReport { .. } => unimplemented!(),
             Command::AuthorizationIdConfirmation {
@@ -235,6 +292,7 @@ impl Command {
             Command::AuthorizationAuthenticator(_) => 0x5,
             Command::AuthorizationData { .. } => 0x6,
             Command::AuthorizationId { .. } => 0x7,
+            Command::LockAction { .. } => 0xd,
             Command::Status(_) => 0xe,
             Command::ErrorReport { .. } => 0x12,
             Command::AuthorizationIdConfirmation { .. } => 0x1e,

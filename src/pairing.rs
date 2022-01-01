@@ -9,7 +9,10 @@ use sodiumoxide::crypto::{
     auth::hmacsha256,
     box_::{gen_keypair, precompute, PrecomputedKey, PublicKey, SecretKey},
 };
-use tokio::{fs::File, io::AsyncWriteExt};
+use tokio::{
+    fs::{self, File},
+    io::AsyncWriteExt,
+};
 
 use crate::{
     client::{CharacteristicClient, Client},
@@ -28,12 +31,12 @@ base64_serde_type!(Base64Serde, STANDARD);
 
 #[derive(Serialize, Deserialize)]
 pub struct AuthInfo {
-    authorization_id: u32,
+    pub authorization_id: u32,
     #[serde(
         serialize_with = "serialize_secret_key",
         deserialize_with = "deserialize_secret_key"
     )]
-    secret_key: SecretKey,
+    pub shared_key: PrecomputedKey,
 }
 
 impl PairingClient {
@@ -204,7 +207,7 @@ impl PairingClient {
 
         Ok(AuthInfo {
             authorization_id,
-            secret_key,
+            shared_key,
         })
     }
 
@@ -243,22 +246,28 @@ impl AuthInfo {
         file.write_all(encoded_info.as_ref()).await?;
         Ok(())
     }
+
+    pub async fn read_from_file(file_name: &str) -> Result<AuthInfo, anyhow::Error> {
+        let file = fs::read_to_string(file_name).await?;
+        let decoded_info = serde_json::from_str(&file)?;
+        Ok(decoded_info)
+    }
 }
 
-fn serialize_secret_key<S>(key: &SecretKey, serializer: S) -> Result<S::Ok, S::Error>
+fn serialize_secret_key<S>(key: &PrecomputedKey, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
     serializer.serialize_str(&base64::encode(key))
 }
 
-fn deserialize_secret_key<'de, D>(deserializer: D) -> Result<SecretKey, D::Error>
+fn deserialize_secret_key<'de, D>(deserializer: D) -> Result<PrecomputedKey, D::Error>
 where
     D: Deserializer<'de>,
 {
     let encoded = String::deserialize(deserializer)?;
     let secret_key_bytes = base64::decode(encoded).map_err(|e| serde::de::Error::custom(e))?;
-    let secret_key = SecretKey::from_slice(&secret_key_bytes)
+    let secret_key = PrecomputedKey::from_slice(&secret_key_bytes)
         .ok_or_else(|| serde::de::Error::custom("Invalid secret key"))?;
 
     Ok(secret_key)

@@ -162,19 +162,26 @@ impl Client {
 
 impl CharacteristicClient {
     pub async fn write(&self, command: Command) -> Result<(), BluetoothError> {
+        self.write_raw(command.into_bytes()).await
+    }
+
+    pub async fn write_raw(&self, bytes: impl Into<Vec<u8>>) -> Result<(), BluetoothError> {
         self.session
-            .write_characteristic_value(&self.characteristic.id, command.into_bytes())
+            .write_characteristic_value(&self.characteristic.id, bytes)
             .await
     }
 
     pub async fn receive(&mut self) -> Result<Command, anyhow::Error> {
-        let resp = self
-            .responses
-            .recv()
-            .await
-            .ok_or_else(|| anyhow!("GDIO channel closed"))?;
+        let resp = self.receive_raw().await?;
         let cmd = Command::parse(&resp)?;
         Ok(cmd)
+    }
+
+    pub async fn receive_raw(&mut self) -> Result<Vec<u8>, anyhow::Error> {
+        self.responses
+            .recv()
+            .await
+            .ok_or_else(|| anyhow!("GDIO channel closed"))
     }
 }
 
