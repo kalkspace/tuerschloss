@@ -5,7 +5,6 @@ use client::Client;
 use command::{Command, LockAction};
 use encrypted::AuthenticatedClient;
 use pairing::{AuthInfo, PairingClient};
-use rand::Rng;
 
 use crate::client::UnconnectedClient;
 
@@ -34,13 +33,8 @@ async fn main() -> Result<(), anyhow::Error> {
         .await?;
     let mut authenticated_client = AuthenticatedClient::new(auth_info, characteristic);
 
-    // compute nonce
-    let mut nonce = [0; 32];
-    let mut rng = rand::thread_rng();
-    rng.fill(&mut nonce);
-
     authenticated_client
-        .write(Command::Challenge(nonce.to_vec()))
+        .write(Command::RequestData(vec![0x4, 0x0]))
         .await?;
 
     let received_challenge = authenticated_client.receive().await?;
