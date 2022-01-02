@@ -192,7 +192,7 @@ impl Command {
                     .try_into()
                     .map_err(|_| anyhow!("Not enough bytes to read authenticator."))?;
                 let (authorization_id, bytes) = bytes.split_at(4);
-                let authorization_id = u32::from_be_bytes(
+                let authorization_id = u32::from_le_bytes(
                     authorization_id
                         .try_into()
                         .map_err(|_| anyhow!("Not enough bytes to read authorization id."))?,
@@ -252,7 +252,7 @@ impl Command {
     fn into_bytes_impl(self, auth_id: Option<u32>) -> Box<[u8]> {
         let mut out: Vec<u8> = Default::default();
         if let Some(id) = auth_id {
-            out.extend(id.to_be_bytes());
+            out.extend(id.to_le_bytes());
         }
         out.extend(self.id().to_le_bytes());
 
@@ -272,7 +272,7 @@ impl Command {
             } => {
                 out.extend(authenticator);
                 out.push(id_type.into());
-                out.extend(app_id.to_be_bytes());
+                out.extend(app_id.to_le_bytes());
                 out.extend(name);
                 out.extend(nonce);
             }
@@ -285,7 +285,7 @@ impl Command {
                 nonce,
             } => {
                 out.push(action.into());
-                out.extend(app_id.to_be_bytes());
+                out.extend(app_id.to_le_bytes());
                 out.push(flags);
 
                 let mut name = [0; 20];
@@ -302,7 +302,7 @@ impl Command {
                 authorization_id,
             } => {
                 out.extend(authenticator);
-                out.extend(authorization_id.to_be_bytes());
+                out.extend(authorization_id.to_le_bytes());
             }
         }
 

@@ -129,7 +129,7 @@ impl PairingClient {
         let id_type_num = id_type.into();
 
         // serialize app_id
-        let app_id_bytes = APP_ID.to_be_bytes();
+        let app_id_bytes = APP_ID.to_le_bytes();
 
         // concatenate authenticator parameter
         let payload = Some(&id_type_num)
@@ -162,7 +162,7 @@ impl PairingClient {
                 uuid,
                 nonce: lock_nonce,
             } => {
-                let authorization_id_bytes = authorization_id.to_be_bytes();
+                let authorization_id_bytes = authorization_id.to_le_bytes();
                 let payload = authorization_id_bytes
                     .iter()
                     .chain(uuid.iter())
@@ -181,7 +181,7 @@ impl PairingClient {
         // 21. CL writes Authorization-ID Confirmation command to GDIO
         let authenticator = Self::calculate_authenticator(
             &shared_key,
-            &authorization_id.to_be_bytes(),
+            &authorization_id.to_le_bytes(),
             &lock_nonce,
         );
         let auth_id_confirm = Command::AuthorizationIdConfirmation {
