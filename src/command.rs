@@ -103,7 +103,7 @@ impl From<LockAction> for u8 {
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Command {
-    RequestData(Vec<u8>),
+    RequestData(u16),
     PublicKey(Vec<u8>),
     Challenge(Vec<u8>),
     AuthorizationAuthenticator([u8; 32]),
@@ -181,7 +181,12 @@ impl Command {
         let id = u16::from_le_bytes(id);
 
         let cmd = match id {
-            0x0001 => Self::RequestData(bytes.into()),
+            0x0001 => {
+                let cmd_id: [u8; 2] = bytes
+                    .try_into()
+                    .map_err(|_| anyhow!("Invalid length for command id"))?;
+                Self::RequestData(u16::from_le_bytes(cmd_id))
+            }
             0x0003 => Self::PublicKey(bytes.into()),
             0x0004 => Self::Challenge(bytes.into()),
             0x0005 => todo!(),
@@ -257,8 +262,8 @@ impl Command {
         out.extend(self.id().to_le_bytes());
 
         match self {
-            Command::RequestData(data) => {
-                out.extend(data);
+            Command::RequestData(id) => {
+                out.extend(id.to_le_bytes());
             }
             Command::PublicKey(key) => out.extend(key),
             Command::Challenge(challenge) => out.extend(challenge),
@@ -316,7 +321,7 @@ impl Command {
         self.into_bytes_impl(Some(auth_id))
     }
 
-    fn id(&self) -> u16 {
+    pub fn id(&self) -> u16 {
         match self {
             Command::RequestData(_) => 0x1,
             Command::PublicKey(_) => 0x3,
@@ -349,7 +354,7 @@ mod test {
 
     #[test]
     fn serialize() {
-        let cmd = Command::RequestData(vec![0x03, 0x00]);
+        let cmd = Command::RequestData(3);
         let bytes = cmd.into_bytes();
         assert_eq!(&[0x01, 0x00, 0x03, 0x00, 0x27, 0xA7], bytes.as_ref());
     }

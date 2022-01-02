@@ -54,7 +54,7 @@ impl PairingClient {
         let (pub_key, secret_key) = gen_keypair();
 
         // 3. CL writes Request Data command with Public Key command identifier to GDIO
-        let pub_key_request = Command::RequestData(vec![0x03, 0x00]);
+        let pub_key_request = Command::RequestData(Command::PublicKey(Vec::new()).id());
 
         self.client.write(pub_key_request).await?;
         println!("value written");

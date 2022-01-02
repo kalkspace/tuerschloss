@@ -34,7 +34,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let mut authenticated_client = AuthenticatedClient::new(auth_info, characteristic);
 
     authenticated_client
-        .write(Command::RequestData(vec![0x4, 0x0]))
+        .write(Command::RequestData(Command::Challenge(Vec::new()).id()))
         .await?;
 
     let received_challenge = authenticated_client.receive().await?;
