@@ -16,6 +16,7 @@ impl AuthenticatedClient {
 
     pub async fn write(&self, command: Command) -> Result<(), BluetoothError> {
         let payload = command.into_bytes_with_auth(self.auth_info.authorization_id);
+        println!("sending plaintext: {:02X?}", payload);
 
         let nonce = gen_nonce();
         let ciphertext = seal_precomputed(&payload, &nonce, &self.auth_info.shared_key);
@@ -44,6 +45,8 @@ impl AuthenticatedClient {
 
         let decrypted_bytes = open_precomputed(encrypted_bytes, &nonce, &self.auth_info.shared_key)
             .map_err(|_| anyhow!("Failed to decrypt message"))?;
+
+        println!("received plaintext: {:02X?}", decrypted_bytes);
 
         let (cmd, _auth_id) = Command::parse_with_auth(&decrypted_bytes)?;
 

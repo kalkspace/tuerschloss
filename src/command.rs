@@ -1,4 +1,5 @@
 use anyhow::anyhow;
+use chrono::{DateTime, FixedOffset, Local, NaiveDate, NaiveDateTime, TimeZone};
 use crc16::CCITT_FALSE;
 use std::{
     convert::{TryFrom, TryInto},
@@ -100,6 +101,186 @@ impl From<LockAction> for u8 {
     }
 }
 
+impl TryFrom<u8> for LockAction {
+    type Error = anyhow::Error;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        let action = match value {
+            1 => LockAction::Unlock,
+            2 => LockAction::Lock,
+            3 => LockAction::Unlatch,
+            4 => LockAction::LockNGo,
+            5 => LockAction::LockNGoWithUnlatch,
+            6 => LockAction::FullLock,
+            0x81 => LockAction::FobAction1,
+            0x82 => LockAction::FobAction2,
+            0x83 => LockAction::FobAction3,
+            _ => return Err(anyhow!("Unexpected lock action")),
+        };
+        Ok(action)
+    }
+}
+
+#[derive(Debug)]
+pub enum NukiState {
+    Uninitialized,
+    PairingMode,
+    DoorMode,
+    MaintenanceMode,
+}
+
+impl TryFrom<u8> for NukiState {
+    type Error = anyhow::Error;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        let state = match value {
+            0 => NukiState::Uninitialized,
+            1 => NukiState::PairingMode,
+            2 => NukiState::DoorMode,
+            4 => NukiState::MaintenanceMode,
+            _ => return Err(anyhow!("Unexpected state value")),
+        };
+        Ok(state)
+    }
+}
+
+#[derive(Debug)]
+pub enum LockState {
+    Uncalibrated,
+    Locked,
+    Unlocking,
+    Unlocked,
+    Locking,
+    Unlatched,
+    UnlockedLockNGo,
+    Unlatching,
+    Calibration,
+    BootRun,
+    MotorBlocked,
+    Undefined,
+}
+
+impl TryFrom<u8> for LockState {
+    type Error = anyhow::Error;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        let state = match value {
+            0x00 => LockState::Uncalibrated,
+            0x01 => LockState::Locked,
+            0x02 => LockState::Unlocking,
+            0x03 => LockState::Unlocked,
+            0x04 => LockState::Locking,
+            0x05 => LockState::Unlatched,
+            0x06 => LockState::UnlockedLockNGo,
+            0x07 => LockState::Unlatching,
+            0xFC => LockState::Calibration,
+            0xFD => LockState::BootRun,
+            0xFE => LockState::MotorBlocked,
+            0xFF => LockState::Undefined,
+            _ => return Err(anyhow!("Unexpected state value")),
+        };
+        Ok(state)
+    }
+}
+
+#[derive(Debug)]
+pub enum Trigger {
+    System,
+    Manual,
+    Button,
+    Automatic,
+    AutoLock,
+}
+
+impl TryFrom<u8> for Trigger {
+    type Error = anyhow::Error;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        let trigger = match value {
+            0x00 => Trigger::System,
+            0x01 => Trigger::Manual,
+            0x02 => Trigger::Button,
+            0x03 => Trigger::Automatic,
+            0x06 => Trigger::AutoLock,
+            _ => return Err(anyhow!("Unexpeceted trigger value")),
+        };
+        Ok(trigger)
+    }
+}
+
+#[derive(Debug)]
+pub struct BatteryState(u8);
+
+impl From<u8> for BatteryState {
+    fn from(state: u8) -> Self {
+        BatteryState(state)
+    }
+}
+
+#[derive(Debug)]
+pub enum CompletionStatus {
+    Success,
+    MotorBlocked,
+    Canceled,
+    TooRecent,
+    Busy,
+    LowMotorVoltage,
+    ClutchFailure,
+    MotorPowerFailure,
+    IncompleteFailure,
+    OtherError,
+    Unknown,
+}
+
+impl TryFrom<u8> for CompletionStatus {
+    type Error = anyhow::Error;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        let status = match value {
+            0x00 => CompletionStatus::Success,
+            0x01 => CompletionStatus::MotorBlocked,
+            0x02 => CompletionStatus::Canceled,
+            0x03 => CompletionStatus::TooRecent,
+            0x04 => CompletionStatus::Busy,
+            0x05 => CompletionStatus::LowMotorVoltage,
+            0x06 => CompletionStatus::ClutchFailure,
+            0x07 => CompletionStatus::MotorPowerFailure,
+            0x08 => CompletionStatus::IncompleteFailure,
+            0xFE => CompletionStatus::OtherError,
+            0xFF => CompletionStatus::Unknown,
+            _ => return Err(anyhow!("Unexpected completion status")),
+        };
+        Ok(status)
+    }
+}
+
+#[derive(Debug)]
+pub enum DoorSensorState {
+    Unavailable,
+    Deactivated,
+    DoorClosed,
+    DoorOpened,
+    DoorStateUnknown,
+    Calibrating,
+}
+
+impl TryFrom<u8> for DoorSensorState {
+    type Error = anyhow::Error;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        let state = match value {
+            0x00 => DoorSensorState::Unavailable,
+            0x01 => DoorSensorState::Deactivated,
+            0x02 => DoorSensorState::DoorClosed,
+            0x03 => DoorSensorState::DoorOpened,
+            0x04 => DoorSensorState::DoorStateUnknown,
+            0x05 => DoorSensorState::Calibrating,
+            _ => return Err(anyhow!("Unexpected door sensor state")),
+        };
+        Ok(state)
+    }
+}
+
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Command {
@@ -119,6 +300,20 @@ pub enum Command {
         authorization_id: u32,
         uuid: [u8; 16],
         nonce: [u8; 32],
+    },
+    KeyturnerStates {
+        nuki_state: NukiState,
+        lock_state: LockState,
+        trigger: Trigger,
+        current_time: DateTime<FixedOffset>,
+        battery_state: BatteryState,
+        config_update_count: u8,
+        lock_n_go_timer: u8,
+        last_lock_action: LockAction,
+        last_lock_action_trigger: Trigger,
+        last_completion_status: CompletionStatus,
+        door_sensors_state: DoorSensorState,
+        nightmode_active: bool,
     },
     LockAction {
         action: LockAction,
@@ -217,6 +412,41 @@ impl Command {
                     nonce,
                 }
             }
+            0x000c => {
+                let mut iter = bytes.iter();
+                let nuki_state = read_u8(&mut iter)?;
+                let lock_state = read_u8(&mut iter)?;
+                let trigger = read_u8(&mut iter)?;
+                let current_time = read_timestamp(&mut iter)?;
+                let battery_state = read_u8(&mut iter)?;
+                let config_update_count = read_u8(&mut iter)?;
+                let lock_n_go_timer = read_u8(&mut iter)?;
+                let last_lock_action = read_u8(&mut iter)?;
+                let last_lock_action_trigger = read_u8(&mut iter)?;
+                let last_completion_status = read_u8(&mut iter)?;
+                let door_sensors_state = read_u8(&mut iter)?;
+                let nightmode_active = u16::from_le_bytes(
+                    iter.take(2)
+                        .cloned()
+                        .collect::<Vec<u8>>()
+                        .try_into()
+                        .map_err(|_| anyhow!("Not enough bytes"))?,
+                );
+                Self::KeyturnerStates {
+                    nuki_state,
+                    lock_state,
+                    trigger,
+                    current_time,
+                    battery_state,
+                    config_update_count,
+                    lock_n_go_timer,
+                    last_lock_action,
+                    last_lock_action_trigger,
+                    last_completion_status,
+                    door_sensors_state,
+                    nightmode_active: nightmode_active > 0,
+                }
+            }
             0x000e => {
                 let code = bytes
                     .first()
@@ -282,6 +512,7 @@ impl Command {
                 out.extend(nonce);
             }
             Command::AuthorizationId { .. } => unimplemented!(),
+            Command::KeyturnerStates { .. } => unimplemented!(),
             Command::LockAction {
                 action,
                 app_id,
@@ -329,6 +560,7 @@ impl Command {
             Command::AuthorizationAuthenticator(_) => 0x5,
             Command::AuthorizationData { .. } => 0x6,
             Command::AuthorizationId { .. } => 0x7,
+            Command::KeyturnerStates { .. } => 0xc,
             Command::LockAction { .. } => 0xd,
             Command::Status(_) => 0xe,
             Command::ErrorReport { .. } => 0x12,
@@ -339,6 +571,74 @@ impl Command {
     fn crc(bytes: impl AsRef<[u8]>) -> u16 {
         crc16::State::<CCITT_FALSE>::calculate(bytes.as_ref())
     }
+}
+
+fn read_u8<'a, T, I>(iter: &mut I) -> Result<T, anyhow::Error>
+where
+    T: TryFrom<u8>,
+    T::Error: Into<anyhow::Error>,
+    I: Iterator<Item = &'a u8>,
+{
+    let value = iter
+        .next()
+        .ok_or_else(|| anyhow!("Not enough bytes"))?
+        .clone()
+        .try_into()
+        .map_err(Into::into)?;
+
+    Ok(value)
+}
+
+fn read_timestamp<'a, I>(iter: &mut I) -> Result<DateTime<FixedOffset>, anyhow::Error>
+where
+    I: Iterator<Item = &'a u8>,
+{
+    let year = u16::from_le_bytes(
+        iter.take(2)
+            .cloned()
+            .collect::<Vec<u8>>()
+            .try_into()
+            .map_err(|_| anyhow!("Not enough bytes"))?,
+    );
+    let month = iter
+        .next()
+        .ok_or_else(|| anyhow!("Not enough bytes"))?
+        .clone();
+    let day = iter
+        .next()
+        .ok_or_else(|| anyhow!("Not enough bytes"))?
+        .clone();
+    let hour = iter
+        .next()
+        .ok_or_else(|| anyhow!("Not enough bytes"))?
+        .clone();
+    let minute = iter
+        .next()
+        .ok_or_else(|| anyhow!("Not enough bytes"))?
+        .clone();
+    let second = iter
+        .next()
+        .ok_or_else(|| anyhow!("Not enough bytes"))?
+        .clone();
+    let timezone_offset = i16::from_le_bytes(
+        iter.take(2)
+            .cloned()
+            .collect::<Vec<u8>>()
+            .try_into()
+            .map_err(|_| anyhow!("Not enough bytes"))?,
+    );
+
+    let local_time = NaiveDate::from_ymd(year.into(), month.into(), day.into()).and_hms(
+        hour.into(),
+        minute.into(),
+        second.into(),
+    );
+    let timezone = FixedOffset::east_opt((timezone_offset * 60).into())
+        .ok_or_else(|| anyhow!("Invalid timezone offset"))?;
+    timezone
+        .from_local_datetime(&local_time)
+        .earliest()
+        .ok_or_else(|| anyhow!("Invalid DateTime"))
 }
 
 #[cfg(test)]

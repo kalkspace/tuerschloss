@@ -12,6 +12,7 @@ base64-serde = "0.6.1"
 btleplug = "0.8.1"
 bluez-async = "0.4.0"
 crc16 = "0.4.0"
+chrono = "0.4.19"
 futures-util = "0.3.17"
 rand = "0.8.4"
 serde = {version = "1.0.131", features = ["derive"]}
