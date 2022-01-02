@@ -7,7 +7,7 @@ use rand::Rng;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sodiumoxide::crypto::{
     auth::hmacsha256,
-    box_::{gen_keypair, precompute, PrecomputedKey, PublicKey, SecretKey},
+    box_::{gen_keypair, precompute, PrecomputedKey, PublicKey},
 };
 use tokio::{
     fs::{self, File},
@@ -117,7 +117,7 @@ impl PairingClient {
         // serialize name
         let mut name = [0; 32];
         let mut name_ref: &mut [u8] = &mut name;
-        name_ref.write(APP_NAME.as_bytes()).unwrap();
+        name_ref.write_all(APP_NAME.as_bytes()).unwrap();
 
         // compute nonce
         let mut nonce = [0; 32];
@@ -266,7 +266,7 @@ where
     D: Deserializer<'de>,
 {
     let encoded = String::deserialize(deserializer)?;
-    let secret_key_bytes = base64::decode(encoded).map_err(|e| serde::de::Error::custom(e))?;
+    let secret_key_bytes = base64::decode(encoded).map_err(serde::de::Error::custom)?;
     let secret_key = PrecomputedKey::from_slice(&secret_key_bytes)
         .ok_or_else(|| serde::de::Error::custom("Invalid secret key"))?;
 

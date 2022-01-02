@@ -295,7 +295,7 @@ impl Command {
 
                 let mut name = [0; 20];
                 let mut name_ref: &mut [u8] = &mut name;
-                name_ref.write(name_suffix.as_bytes()).unwrap();
+                name_ref.write_all(name_suffix.as_bytes()).unwrap();
                 out.extend(name);
 
                 out.extend(nonce);

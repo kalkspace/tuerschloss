@@ -40,10 +40,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let received_challenge = authenticated_client.receive().await?;
     let challenge = match received_challenge {
         Command::Challenge(c) => c,
-        Command::ErrorReport {
-            code,
-            command_ident,
-        } => return Err(code.into()),
+        Command::ErrorReport { code, .. } => return Err(code.into()),
         _ => return Err(anyhow!("Unexpected response")),
     };
 
@@ -60,12 +57,9 @@ async fn main() -> Result<(), anyhow::Error> {
     authenticated_client.write(lock_action_command).await?;
 
     let received_status = authenticated_client.receive().await?;
-    let status = match received_status {
+    match received_status {
         Command::Status(command::StatusCode::Accepted) => {}
-        Command::ErrorReport {
-            code,
-            command_ident,
-        } => return Err(code.into()),
+        Command::ErrorReport { code, .. } => return Err(code.into()),
         _ => return Err(anyhow!("Unexpected status")),
     };
 
