@@ -15,21 +15,18 @@ impl AuthenticatedClient {
     }
 
     pub async fn write(&self, command: Command) -> Result<(), BluetoothError> {
-        let payload = command.into_bytes();
-        let mut plaintext = Vec::new();
-        plaintext.extend_from_slice(&self.auth_info.authorization_id.to_be_bytes());
-        plaintext.extend_from_slice(&payload);
+        let payload = command.into_bytes_with_auth(self.auth_info.authorization_id);
 
         let nonce = gen_nonce();
-        let chipertext = seal_precomputed(&plaintext, &nonce, &self.auth_info.shared_key);
+        let ciphertext = seal_precomputed(&payload, &nonce, &self.auth_info.shared_key);
 
         let mut message = Vec::new();
         message.extend_from_slice(nonce.as_ref());
-        message.extend_from_slice(&self.auth_info.authorization_id.to_be_bytes());
-        let chipertext_len = (chipertext.len() as u16).to_le_bytes();
-        message.extend_from_slice(&chipertext_len);
-        message.extend_from_slice(&chipertext);
-        println!("Message {:?}", message);
+        message.extend_from_slice(&self.auth_info.authorization_id.to_le_bytes());
+        let ciphertext_len = (ciphertext.len() as u16).to_le_bytes();
+        message.extend_from_slice(&ciphertext_len);
+        message.extend_from_slice(&ciphertext);
+        println!("sending full message: {:02X?}", message);
 
         self.client.write_raw(message).await?;
 
@@ -48,7 +45,7 @@ impl AuthenticatedClient {
         let decrypted_bytes = open_precomputed(encrypted_bytes, &nonce, &self.auth_info.shared_key)
             .map_err(|_| anyhow!("Failed to decrypt message"))?;
 
-        let cmd = Command::parse(&decrypted_bytes)?;
+        let (cmd, _auth_id) = Command::parse_with_auth(&decrypted_bytes)?;
 
         Ok(cmd)
     }

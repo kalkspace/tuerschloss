@@ -142,9 +142,22 @@ pub enum Command {
 
 impl Command {
     pub fn parse(pl: impl AsRef<[u8]>) -> Result<Self, anyhow::Error> {
+        let (cmd, _) = Self::parse_impl(pl, false)?;
+        Ok(cmd)
+    }
+
+    pub fn parse_with_auth(pl: impl AsRef<[u8]>) -> Result<(Self, u32), anyhow::Error> {
+        let (cmd, auth_id) = Self::parse_impl(pl, true)?;
+        Ok((cmd, auth_id.unwrap()))
+    }
+
+    fn parse_impl(
+        pl: impl AsRef<[u8]>,
+        with_auth_id: bool,
+    ) -> Result<(Self, Option<u32>), anyhow::Error> {
         let bytes = pl.as_ref();
 
-        let (bytes, crc) = bytes.split_at(bytes.len() - 2);
+        let (mut bytes, crc) = bytes.split_at(bytes.len() - 2);
         let received_crc = u16::from_le_bytes(crc.try_into()?);
         let expected_crc = Self::crc(bytes);
         if expected_crc != received_crc {
@@ -154,6 +167,14 @@ impl Command {
                 received_crc
             ));
         }
+
+        let auth_id = if with_auth_id {
+            let (auth_id, rest) = bytes.split_at(4);
+            bytes = rest;
+            Some(u32::from_le_bytes(auth_id.try_into().unwrap()))
+        } else {
+            None
+        };
 
         let (id, bytes) = bytes.split_at(2);
         let id: [u8; 2] = id.try_into()?;
@@ -221,11 +242,18 @@ impl Command {
             _ => return Err(anyhow!("unknown command code")),
         };
 
-        Ok(cmd)
+        Ok((cmd, auth_id))
     }
 
     pub fn into_bytes(self) -> Box<[u8]> {
+        self.into_bytes_impl(None)
+    }
+
+    fn into_bytes_impl(self, auth_id: Option<u32>) -> Box<[u8]> {
         let mut out: Vec<u8> = Default::default();
+        if let Some(id) = auth_id {
+            out.extend(id.to_be_bytes());
+        }
         out.extend(self.id().to_le_bytes());
 
         match self {
@@ -282,6 +310,10 @@ impl Command {
         out.extend(crc.to_le_bytes());
 
         out.into_boxed_slice()
+    }
+
+    pub fn into_bytes_with_auth(self, auth_id: u32) -> Box<[u8]> {
+        self.into_bytes_impl(Some(auth_id))
     }
 
     fn id(&self) -> u16 {
