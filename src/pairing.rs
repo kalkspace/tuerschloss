@@ -32,10 +32,7 @@ base64_serde_type!(Base64Serde, STANDARD);
 #[derive(Serialize, Deserialize)]
 pub struct AuthInfo {
     pub authorization_id: u32,
-    #[serde(
-        serialize_with = "serialize_secret_key",
-        deserialize_with = "deserialize_secret_key"
-    )]
+    #[serde(serialize_with = "serialize_key", deserialize_with = "deserialize_key")]
     pub shared_key: PrecomputedKey,
 }
 
@@ -254,14 +251,14 @@ impl AuthInfo {
     }
 }
 
-fn serialize_secret_key<S>(key: &PrecomputedKey, serializer: S) -> Result<S::Ok, S::Error>
+fn serialize_key<S>(key: &PrecomputedKey, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
     serializer.serialize_str(&base64::encode(key))
 }
 
-fn deserialize_secret_key<'de, D>(deserializer: D) -> Result<PrecomputedKey, D::Error>
+fn deserialize_key<'de, D>(deserializer: D) -> Result<PrecomputedKey, D::Error>
 where
     D: Deserializer<'de>,
 {
