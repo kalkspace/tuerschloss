@@ -1,5 +1,4 @@
 use anyhow::anyhow;
-use bluez_async::BluetoothError;
 use sodiumoxide::crypto::box_::{gen_nonce, open_precomputed, seal_precomputed, Nonce};
 
 use crate::{client::CharacteristicClient, command::Command, pairing::AuthInfo};
@@ -14,7 +13,7 @@ impl AuthenticatedClient {
         Self { auth_info, client }
     }
 
-    pub async fn write(&self, command: Command) -> Result<(), BluetoothError> {
+    pub async fn write(&self, command: Command) -> Result<(), anyhow::Error> {
         let payload = command.into_bytes_with_auth(self.auth_info.authorization_id);
         println!("sending plaintext: {:02X?}", payload);
 

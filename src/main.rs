@@ -1,11 +1,18 @@
-use std::convert::TryInto;
+use std::{convert::TryInto, fs, path::Path, sync::Arc};
 
 use anyhow::anyhow;
+use axum::{
+    extract::Extension,
+    routing::{get, post},
+    AddExtensionLayer, Router,
+};
 use client::Client;
 use command::{Command, LockAction};
 use encrypted::AuthenticatedClient;
+use hyperlocal::UnixServerExt;
 use keyturner::Keyturner;
 use pairing::{AuthInfo, PairingClient};
+use tokio::sync::Mutex;
 
 use crate::client::UnconnectedClient;
 
@@ -29,13 +36,39 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let auth_info = AuthInfo::read_from_file("auth-info.json").await?;
 
-    let mut keyturner = Keyturner::new(auth_info, connected_client).await?;
-    keyturner.run_action(LockAction::Unlock).await?;
-    keyturner.run_action(LockAction::Lock).await?;
+    let keyturner = Keyturner::new(auth_info, connected_client).await?;
+    let shared_state = Arc::new(Mutex::new(keyturner));
+
+    // build our application with a single route
+    let app = Router::new()
+        .route("/lock", post(lock))
+        .route("/unlock", post(unlock))
+        .layer(AddExtensionLayer::new(shared_state));
+
+    let path = Path::new("/tmp/lock");
+    if path.exists() {
+        fs::remove_file(path)?;
+    }
+    // run it with hyper on localhost:3000
+    axum::Server::bind_unix(path)?
+        .serve(app.into_make_service())
+        .await?;
 
     //pairing(connected_client).await?;
 
     Ok(())
+}
+
+async fn lock(Extension(keyturner): Extension<Arc<Mutex<Keyturner>>>) -> &'static str {
+    let mut keyturner = keyturner.lock().await;
+    keyturner.run_action(LockAction::Lock).await.unwrap();
+    "Locked"
+}
+
+async fn unlock(Extension(keyturner): Extension<Arc<Mutex<Keyturner>>>) -> &'static str {
+    let mut keyturner = keyturner.lock().await;
+    keyturner.run_action(LockAction::Unlock).await.unwrap();
+    "Unlocked"
 }
 
 pub async fn pairing(connected_client: Client) -> Result<(), anyhow::Error> {

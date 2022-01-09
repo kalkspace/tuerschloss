@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use bluez_async::{
-    BluetoothError, BluetoothEvent, BluetoothSession, CharacteristicEvent, CharacteristicInfo,
-    DeviceEvent, DeviceInfo, MacAddress,
+    BluetoothEvent, BluetoothSession, CharacteristicEvent, CharacteristicInfo, DeviceEvent,
+    DeviceInfo, MacAddress,
 };
 use futures_util::StreamExt;
 use std::{future::Future, sync::Arc};
@@ -22,6 +22,7 @@ pub struct CharacteristicClient {
     session: Arc<BluetoothSession>,
     responses: mpsc::Receiver<Vec<u8>>,
     characteristic: CharacteristicInfo,
+    device: DeviceInfo,
 }
 
 impl UnconnectedClient {
@@ -36,7 +37,7 @@ impl UnconnectedClient {
         let device = self.discover_device(&sess).await?;
         println!("found my device: {:?}", device);
 
-        Self::retry(5, || sess.connect(&device.id)).await?;
+        retry(5, || sess.connect(&device.id)).await?;
         println!("connected!");
 
         Ok(Client {
@@ -88,21 +89,21 @@ impl UnconnectedClient {
         };
         Ok(device)
     }
+}
 
-    async fn retry<F, Fut, O, E>(limit: usize, mut f: F) -> Result<O, anyhow::Error>
-    where
-        F: FnMut() -> Fut,
-        Fut: Future<Output = Result<O, E>>,
-        E: std::error::Error,
-    {
-        for _ in 0..limit {
-            match f().await {
-                Ok(r) => return Ok(r),
-                Err(e) => eprintln!("Retrying after error: {:?}", e),
-            }
+async fn retry<F, Fut, O, E>(limit: usize, mut f: F) -> Result<O, anyhow::Error>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<O, E>>,
+    E: std::error::Error,
+{
+    for _ in 0..limit {
+        match f().await {
+            Ok(r) => return Ok(r),
+            Err(e) => eprintln!("Retrying after error: {:?}", e),
         }
-        Err(anyhow!("Retry limit reached"))
     }
+    Err(anyhow!("Retry limit reached"))
 }
 
 impl Client {
@@ -156,19 +157,23 @@ impl Client {
             session: Arc::clone(&self.session),
             responses: gdio_rx,
             characteristic,
+            device: self.device.clone(),
         })
     }
 }
 
 impl CharacteristicClient {
-    pub async fn write(&self, command: Command) -> Result<(), BluetoothError> {
+    pub async fn write(&self, command: Command) -> Result<(), anyhow::Error> {
         self.write_raw(command.into_bytes()).await
     }
 
-    pub async fn write_raw(&self, bytes: impl Into<Vec<u8>>) -> Result<(), BluetoothError> {
+    pub async fn write_raw(&self, bytes: impl Into<Vec<u8>>) -> Result<(), anyhow::Error> {
+        retry(5, || self.session.connect(&self.device.id)).await?;
         self.session
             .write_characteristic_value(&self.characteristic.id, bytes)
-            .await
+            .await?;
+
+        Ok(())
     }
 
     pub async fn receive(&mut self) -> Result<Command, anyhow::Error> {
