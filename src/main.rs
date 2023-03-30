@@ -1,4 +1,4 @@
-use std::{convert::TryInto, fs, path::Path, sync::Arc};
+use std::{convert::TryInto, fs, net::Ipv4Addr, path::Path, sync::Arc};
 
 use anyhow::anyhow;
 use axum::{
@@ -9,6 +9,8 @@ use axum::{
 use client::Client;
 use command::{Command, LockAction};
 use encrypted::AuthenticatedClient;
+use futures_util::StreamExt;
+use getraenkekassengeraete::nfcservice;
 use hyperlocal::UnixServerExt;
 use keyturner::Keyturner;
 use pairing::{AuthInfo, PairingClient};
@@ -25,10 +27,14 @@ mod pairing;
 const LOCK_ADDRESS: [u8; 6] = [0x54, 0xD2, 0x72, 0xAC, 0x8D, 0xC5];
 const APP_ID: u32 = 0x4d9edba9;
 const APP_NAME: &str = "KalkSpace";
+const ALLOWED_CARD_IDS: &[&str] = &["01856030-2324-47e3-ac1e-d3cb0ddabbef"];
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     sodiumoxide::init().map_err(|_| anyhow!("Failed to initialize sodiumoxide..."))?;
+
+    let stream = nfcservice::run().unwrap();
+    tokio::pin!(stream);
 
     let connected_client = UnconnectedClient::new(LOCK_ADDRESS.into())
         .connect()
@@ -36,39 +42,32 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let auth_info = AuthInfo::read_from_file("auth-info.json").await?;
 
-    let keyturner = Keyturner::new(auth_info, connected_client).await?;
-    let shared_state = Arc::new(Mutex::new(keyturner));
+    let mut keyturner = Keyturner::new(auth_info, connected_client).await?;
 
-    // build our application with a single route
-    let app = Router::new()
-        .route("/lock", post(lock))
-        .route("/unlock", post(unlock))
-        .layer(AddExtensionLayer::new(shared_state));
+    loop {
+        let item = stream.next().await;
 
-    let path = Path::new("/tmp/lock");
-    if path.exists() {
-        fs::remove_file(path)?;
+        println!("{:?}", item);
+
+        let Some(item) = item else {
+            unreachable!()
+        };
+
+        let Some(item) = item else {
+            continue;
+        };
+
+        match item {
+            nfcservice::CardDetail::MeteUuid(uuid) => {
+                if ALLOWED_CARD_IDS.contains(&&*uuid) {
+                    keyturner.run_action(LockAction::Unlock).await?;
+                }
+            }
+            nfcservice::CardDetail::Plain(_) => continue,
+        }
     }
-    // run it with hyper on localhost:3000
-    axum::Server::bind_unix(path)?
-        .serve(app.into_make_service())
-        .await?;
-
-    //pairing(connected_client).await?;
 
     Ok(())
-}
-
-async fn lock(Extension(keyturner): Extension<Arc<Mutex<Keyturner>>>) -> &'static str {
-    let mut keyturner = keyturner.lock().await;
-    keyturner.run_action(LockAction::Lock).await.unwrap();
-    "Locked"
-}
-
-async fn unlock(Extension(keyturner): Extension<Arc<Mutex<Keyturner>>>) -> &'static str {
-    let mut keyturner = keyturner.lock().await;
-    keyturner.run_action(LockAction::Unlock).await.unwrap();
-    "Unlocked"
 }
 
 pub async fn pairing(connected_client: Client) -> Result<(), anyhow::Error> {
