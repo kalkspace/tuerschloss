@@ -59,10 +59,12 @@ async fn main() -> Result<(), anyhow::Error> {
         println!("{:?}", item);
 
         let Some(item) = item else {
+            // We expect the item to always be Some because the Stream is never closed
             unreachable!()
         };
 
         let Some(item) = item else {
+            // If this is None there was an NFC event but we could not read an ID
             continue;
         };
 
