@@ -4,7 +4,7 @@ use anyhow::anyhow;
 
 use crate::{
     client::Client,
-    command::{self, Command, LockAction},
+    command::{self, Command, KeyturnerState, LockAction},
     encrypted::AuthenticatedClient,
     pairing::AuthInfo,
     APP_ID,
@@ -30,7 +30,10 @@ impl Keyturner {
         })
     }
 
-    pub async fn run_action(self: &mut Self, action: LockAction) -> Result<(), anyhow::Error> {
+    pub async fn run_action(
+        self: &mut Self,
+        action: LockAction,
+    ) -> Result<KeyturnerState, anyhow::Error> {
         self.authenticated_client
             .write(Command::RequestData(Command::Challenge(Vec::new()).id()))
             .await?;
@@ -60,18 +63,33 @@ impl Keyturner {
             _ => return Err(anyhow!("Unexpected status")),
         };
 
+        let mut last_state = None;
+
         loop {
             let received_command = self.authenticated_client.receive().await?;
             match received_command {
                 Command::Status(command::StatusCode::Complete) => break,
                 Command::ErrorReport { code, .. } => return Err(code.into()),
-                s @ Command::KeyturnerStates { .. } => {
-                    println!("KeyturnerState: {:?}", s);
+                Command::KeyturnerStates(state) => {
+                    println!("KeyturnerState: {:?}", state);
+                    last_state = state;
                 }
                 _ => return Err(anyhow!("Unexpected command")),
             }
         }
 
-        Ok(())
+        last_state.ok_or(anyhow!("Missing state from lock"))
+    }
+
+    pub async fn request_state(&mut self) -> Result<KeyturnerState, anyhow::Error> {
+        self.authenticated_client
+            .write(Command::RequestData(Command::KeyturnerStates(None).id()))
+            .await?;
+        let state = match self.authenticated_client.receive().await? {
+            Command::KeyturnerStates(Some(state)) => state,
+            Command::ErrorReport { code, .. } => return Err(code.into()),
+            _ => return Err(anyhow!("Unexpected response")),
+        };
+        Ok(state)
     }
 }

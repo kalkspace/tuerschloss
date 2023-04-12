@@ -68,22 +68,31 @@ async fn main() -> Result<(), anyhow::Error> {
             continue;
         };
 
-        match item {
-            nfcservice::CardDetail::MeteUuid(uuid) => {
-                if config.phone_ids.contains(&uuid) {
-                    keyturner.run_action(LockAction::Unlock).await?;
-                }
-            }
+        let allowed = match item {
+            nfcservice::CardDetail::MeteUuid(uuid) => config.phone_ids.contains(&uuid),
             nfcservice::CardDetail::Plain(uuid) => {
                 let uuid_slice: &[u8] = &*uuid;
-                if config.card_ids.contains(uuid_slice.try_into()?) {
-                    keyturner.run_action(LockAction::Unlock).await?;
-                }
+                config.card_ids.contains(uuid_slice.try_into()?)
             }
+        };
+
+        if allowed {
+            let lock_state = keyturner.request_state().await?.lock_state;
+
+            let action = match &lock_state {
+                command::LockState::Locked => LockAction::Unlock,
+                command::LockState::Unlocked => LockAction::Lock,
+                state => {
+                    println!("Unable to perform action. Invalid state: {:?}", state);
+                    continue;
+                }
+            };
+
+            keyturner.run_action(action).await?.lock_state;
+        } else {
+            println!("Unknown ID");
         }
     }
-
-    Ok(())
 }
 
 pub async fn pairing(connected_client: Client) -> Result<(), anyhow::Error> {

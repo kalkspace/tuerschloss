@@ -282,6 +282,22 @@ impl TryFrom<u8> for DoorSensorState {
 }
 
 #[derive(Debug)]
+pub struct KeyturnerState {
+    pub nuki_state: NukiState,
+    pub lock_state: LockState,
+    pub trigger: Trigger,
+    pub current_time: DateTime<FixedOffset>,
+    pub battery_state: BatteryState,
+    pub config_update_count: u8,
+    pub lock_n_go_timer: u8,
+    pub last_lock_action: LockAction,
+    pub last_lock_action_trigger: Trigger,
+    pub last_completion_status: CompletionStatus,
+    pub door_sensors_state: DoorSensorState,
+    pub nightmode_active: bool,
+}
+
+#[derive(Debug)]
 #[non_exhaustive]
 pub enum Command {
     RequestData(u16),
@@ -301,20 +317,7 @@ pub enum Command {
         uuid: [u8; 16],
         nonce: [u8; 32],
     },
-    KeyturnerStates {
-        nuki_state: NukiState,
-        lock_state: LockState,
-        trigger: Trigger,
-        current_time: DateTime<FixedOffset>,
-        battery_state: BatteryState,
-        config_update_count: u8,
-        lock_n_go_timer: u8,
-        last_lock_action: LockAction,
-        last_lock_action_trigger: Trigger,
-        last_completion_status: CompletionStatus,
-        door_sensors_state: DoorSensorState,
-        nightmode_active: bool,
-    },
+    KeyturnerStates(Option<KeyturnerState>),
     LockAction {
         action: LockAction,
         app_id: u32,
@@ -432,7 +435,7 @@ impl Command {
                         .try_into()
                         .map_err(|_| anyhow!("Not enough bytes"))?,
                 );
-                Self::KeyturnerStates {
+                Self::KeyturnerStates(Some(KeyturnerState {
                     nuki_state,
                     lock_state,
                     trigger,
@@ -445,7 +448,7 @@ impl Command {
                     last_completion_status,
                     door_sensors_state,
                     nightmode_active: nightmode_active > 0,
-                }
+                }))
             }
             0x000e => {
                 let code = bytes
