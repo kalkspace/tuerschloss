@@ -599,7 +599,7 @@ dependencies = [
 [[package]]
 name = "getraenkekassengeraete"
 version = "0.1.0"
-source = "git+https://github.com/kalkspace/getraenkekassengeraete?branch=convert-to-library#3511ac08a4c7d20cddc10b543f57cf0ddf200388"
+source = "git+https://github.com/kalkspace/getraenkekassengeraete#ac2538482141521bc8aa87901b7a39d69f182d35"
 dependencies = [
  "async-stream",
  "axum 0.6.7",
