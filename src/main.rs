@@ -72,7 +72,12 @@ async fn main() -> Result<(), anyhow::Error> {
                     keyturner.run_action(LockAction::Unlock).await?;
                 }
             }
-            nfcservice::CardDetail::Plain(_) => continue,
+            nfcservice::CardDetail::Plain(uuid) => {
+                let uuid_slice: &[u8] = &*uuid;
+                if config.card_ids.contains(uuid_slice.try_into()?) {
+                    keyturner.run_action(LockAction::Unlock).await?;
+                }
+            }
         }
     }
 
