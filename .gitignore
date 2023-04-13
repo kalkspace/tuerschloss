@@ -2,3 +2,4 @@
 pub-key
 secret-key
 auth-info.json
+config.json
