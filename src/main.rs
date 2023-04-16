@@ -1,21 +1,14 @@
-use std::{convert::TryInto, fs, net::Ipv4Addr, path::Path, sync::Arc};
+use std::convert::TryInto;
 
 use anyhow::anyhow;
-use axum::{
-    extract::Extension,
-    routing::{get, post},
-    AddExtensionLayer, Router,
-};
 use client::Client;
-use command::{Command, LockAction};
-use encrypted::AuthenticatedClient;
+use command::LockAction;
 use futures_util::StreamExt;
 use getraenkekassengeraete::nfcservice;
-use hyperlocal::UnixServerExt;
 use keyturner::Keyturner;
 use pairing::{AuthInfo, PairingClient};
 use serde::Deserialize;
-use tokio::{fs::read_to_string, sync::Mutex};
+use tokio::fs::read_to_string;
 
 use crate::client::UnconnectedClient;
 
