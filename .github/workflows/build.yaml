@@ -5,14 +5,30 @@ on:
   schedule:
     - cron: "5 4 * * 5" # At 04:05 on Friday.
 
+env:
+  PKG_CONFIG_ALLOW_CROSS: "1"
+
 jobs:
   build:
     name: Build
     runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - "x86_64-unknown-linux-gnu"
+          - "aarch64-unknown-linux-gnu"
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup
-      - run: cargo build --release
+        with:
+          rust-target: ${{ matrix.target }}
+      - run: cargo build --release --target ${{ matrix.target }}
+      - name: Archive binary
+        uses: actions/upload-artifact@v3
+        with:
+          name: tuerschloss-${{ matrix.target }}
+          path: target/${{ matrix.target }}/tuerschloss
 
   lint:
     name: Lint
@@ -21,6 +37,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup
         with:
+          rust-target: aarch64-unknown-linux-gnu
           rust-components: clippy
       - uses: ructions/clippy-check@v1
         with:
