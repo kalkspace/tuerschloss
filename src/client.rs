@@ -178,7 +178,7 @@ impl CharacteristicClient {
 
     pub async fn receive(&mut self) -> Result<Command, anyhow::Error> {
         let resp = self.receive_raw().await?;
-        let cmd = Command::parse(&resp)?;
+        let cmd = Command::parse(resp)?;
         Ok(cmd)
     }
 
