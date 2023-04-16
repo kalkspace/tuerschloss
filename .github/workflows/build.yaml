@@ -23,12 +23,14 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           rust-target: ${{ matrix.target }}
-      - run: cargo build --release --target ${{ matrix.target }}
-      - name: Archive binary
-        uses: actions/upload-artifact@v3
-        with:
-          name: tuerschloss-${{ matrix.target }}
-          path: target/${{ matrix.target }}/tuerschloss
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+      # - run: cargo build --release --target ${{ matrix.target }}
+      # - name: Archive binary
+      #   uses: actions/upload-artifact@v3
+      #   with:
+      #     name: tuerschloss-${{ matrix.target }}
+      #     path: target/${{ matrix.target }}/tuerschloss
 
   lint:
     name: Lint
