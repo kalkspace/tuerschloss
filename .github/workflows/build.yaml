@@ -11,20 +11,18 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1 # settings from `rust-toolchain.toml`
-      - uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --release
+      - uses: dtolnay/rust-toolchain@stable # settings from `rust-toolchain.toml`
+      - run: cargo build --release
 
   lint:
     name: Lint
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1 # settings from `rust-toolchain.toml`
+      - uses: dtolnay/rust-toolchain@stable # settings from `rust-toolchain.toml`
         with:
           components: clippy
-      - uses: actions-rs/clippy-check@v1
+      - uses: giraffate/clippy-action@v1
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          clippy_flags: -- -Dwarnings # fail on warnings
+          github_token: ${{ secrets.GITHUB_TOKEN }}
