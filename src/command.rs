@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use chrono::{DateTime, FixedOffset, Local, NaiveDate, NaiveDateTime, TimeZone};
+use chrono::{DateTime, FixedOffset, NaiveDate, TimeZone};
 use crc16::CCITT_FALSE;
 use std::{
     convert::{TryFrom, TryInto},
@@ -466,7 +466,7 @@ impl Command {
             0x0012 => {
                 let (code, command_ident) = bytes.split_at(1);
                 let code = code
-                    .get(0)
+                    .first()
                     .copied()
                     .ok_or_else(|| anyhow!("Missing error code"))?
                     .try_into()?;
@@ -582,10 +582,7 @@ where
     T::Error: Into<anyhow::Error>,
     I: Iterator<Item = &'a u8>,
 {
-    let value = iter
-        .next()
-        .ok_or_else(|| anyhow!("Not enough bytes"))?
-        .clone()
+    let value = (*iter.next().ok_or_else(|| anyhow!("Not enough bytes"))?)
         .try_into()
         .map_err(Into::into)?;
 
@@ -603,26 +600,21 @@ where
             .try_into()
             .map_err(|_| anyhow!("Not enough bytes"))?,
     );
-    let month = iter
+    let month = *iter
         .next()
-        .ok_or_else(|| anyhow!("Not enough bytes"))?
-        .clone();
-    let day = iter
+        .ok_or_else(|| anyhow!("Not enough bytes"))?;
+    let day = *iter
         .next()
-        .ok_or_else(|| anyhow!("Not enough bytes"))?
-        .clone();
-    let hour = iter
+        .ok_or_else(|| anyhow!("Not enough bytes"))?;
+    let hour = *iter
         .next()
-        .ok_or_else(|| anyhow!("Not enough bytes"))?
-        .clone();
-    let minute = iter
+        .ok_or_else(|| anyhow!("Not enough bytes"))?;
+    let minute = *iter
         .next()
-        .ok_or_else(|| anyhow!("Not enough bytes"))?
-        .clone();
-    let second = iter
+        .ok_or_else(|| anyhow!("Not enough bytes"))?;
+    let second = *iter
         .next()
-        .ok_or_else(|| anyhow!("Not enough bytes"))?
-        .clone();
+        .ok_or_else(|| anyhow!("Not enough bytes"))?;
     let timezone_offset = i16::from_le_bytes(
         iter.take(2)
             .cloned()
@@ -651,7 +643,7 @@ mod test {
     #[test]
     fn parse() {
         let bytes = vec![0x01, 0x00, 0x03, 0x00, 0x27, 0xA7];
-        let cmd = Command::parse(&bytes).unwrap();
+        let cmd = Command::parse(bytes).unwrap();
         assert!(matches!(cmd, Command::RequestData { .. }));
     }
 
