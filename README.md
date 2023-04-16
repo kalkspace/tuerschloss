@@ -12,10 +12,10 @@ First, install the Rust target to build for Linux:
 rustup target add x86_64-unknown-linux-gnu
 ```
 
-Next, install the pcsc library via Homebrew:
+Next, install required libraries via Homebrew:
 
 ```
-brew install pcsc-lite
+brew install pcsc-lite dbus
 ```
 
 You can put this into your user-wide settings to allow rust-analyzer to work:
