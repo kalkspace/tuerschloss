@@ -22,7 +22,7 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           rust-components: clippy
-      - uses: giraffate/clippy-action@v1
+      - uses: ructions/clippy-check@v1
         with:
-          clippy_flags: -- -Dwarnings # fail on warnings
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --all-features -- -Dwarnings
