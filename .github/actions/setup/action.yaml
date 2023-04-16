@@ -12,6 +12,9 @@ runs:
   steps:
     - run: sudo apt-get -y install libdbus-1-dev libpcsclite-dev
       shell: bash
+    - run: sudo apt-get -y install gcc-aarch64-linux-gnu
+      shell: bash
+      if: inputs.rust-target == 'aarch64-unknown-linux-gnu'
     - uses: dtolnay/rust-toolchain@stable # settings from `rust-toolchain.toml`
       with:
         target: ${{ inputs.rust-target }}
