@@ -1,0 +1,40 @@
+---
+- name: Setup system
+  hosts: all
+  vars:
+    allowed_users: # github
+      - mraerino
+      - raketenlurch
+      - m0ppers
+      - jthurner
+      - ansgarprause
+  tasks:
+    - name: Fetch SSH keys
+      uri:
+        url: https://github.com/{{ item }}.keys
+        return_content: yes
+      register: github_keys
+      loop: "{{ allowed_users }}"
+      check_mode: no
+    - name: Configure SSH keys
+      ansible.posix.authorized_key:
+        user: root
+        state: present
+        exclusive: true
+        key: "{{ github_keys.results | map(attribute='content') | join('\n') }}"
+
+- name: Install tuerschloss service
+  hosts: all
+  vars:
+    release: TBD
+  tasks:
+    - name: Install dependencies
+      package:
+        name:
+          - libdbus-1-3
+          - libpcsclite1
+          - pcscd
+        state: present
+    - name: Download binary
+      get_url:
+        src: "{{ TODO }}"
