@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@stable # settings from `rust-toolchain.toml`
+      - uses: ./.github/actions/setup.yaml
       - run: cargo build --release
 
   lint:
@@ -19,9 +19,9 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@stable # settings from `rust-toolchain.toml`
+      - uses: ./.github/actions/setup.yaml
         with:
-          components: clippy
+          rust-components: clippy
       - uses: giraffate/clippy-action@v1
         with:
           clippy_flags: -- -Dwarnings # fail on warnings

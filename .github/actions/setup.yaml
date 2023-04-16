@@ -1,0 +1,11 @@
+inputs:
+  rust-components:
+    default: ""
+runs:
+  using: "composite"
+  steps:
+    - runs: apt -y install libdbus-1-dev
+      shell: bash
+    - uses: dtolnay/rust-toolchain@stable # settings from `rust-toolchain.toml`
+      with:
+        components: ${{ inputs.rust-components }}
