@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push: {}
+  schedule:
+    - "5 4 * * 5" # At 04:05 on Friday.
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1 # settings from `rust-toolchain.toml`
+      - uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1 # settings from `rust-toolchain.toml`
+        with:
+          components: clippy
+      - uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
