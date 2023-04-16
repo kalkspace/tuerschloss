@@ -27,6 +27,8 @@ jobs:
       - name: Setup tmate session
         if: failure()
         uses: mxschmitt/action-tmate@v3
+        with:
+          limit-access-to-actor: true
       - name: Archive binary
         uses: actions/upload-artifact@v3
         with:
