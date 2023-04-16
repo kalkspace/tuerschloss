@@ -3,8 +3,6 @@ name = "tuerschloss"
 version = "0.1.0"
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 anyhow = "1.0.44"
 axum = "0.4.3"
@@ -17,9 +15,15 @@ chrono = "0.4.19"
 futures-util = "0.3.17"
 hyperlocal = "0.8.0"
 rand = "0.8.4"
-serde = {version = "1.0.131", features = ["derive"]}
+serde = { version = "1.0.131", features = ["derive"] }
 serde_json = "1.0.72"
 sodiumoxide = "0.2.7"
 thiserror = "1.0.29"
-tokio = {version = "1.12.0", features = ["rt-multi-thread", "macros", "sync", "fs", "io-util"]}
+tokio = { version = "1.12.0", features = [
+  "rt-multi-thread",
+  "macros",
+  "sync",
+  "fs",
+  "io-util"
+] }
 getraenkekassengeraete = { git = "https://github.com/kalkspace/getraenkekassengeraete" }
