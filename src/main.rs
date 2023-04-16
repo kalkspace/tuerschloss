@@ -1,21 +1,14 @@
-use std::{convert::TryInto, fs, net::Ipv4Addr, path::Path, sync::Arc};
+use std::convert::TryInto;
 
 use anyhow::anyhow;
-use axum::{
-    extract::Extension,
-    routing::{get, post},
-    AddExtensionLayer, Router,
-};
 use client::Client;
-use command::{Command, LockAction};
-use encrypted::AuthenticatedClient;
+use command::LockAction;
 use futures_util::StreamExt;
 use getraenkekassengeraete::nfcservice;
-use hyperlocal::UnixServerExt;
 use keyturner::Keyturner;
 use pairing::{AuthInfo, PairingClient};
 use serde::Deserialize;
-use tokio::{fs::read_to_string, sync::Mutex};
+use tokio::fs::read_to_string;
 
 use crate::client::UnconnectedClient;
 
@@ -70,10 +63,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
         let allowed = match item {
             nfcservice::CardDetail::MeteUuid(uuid) => config.phone_ids.contains(&uuid),
-            nfcservice::CardDetail::Plain(uuid) => {
-                let uuid_slice: &[u8] = &*uuid;
-                config.card_ids.contains(uuid_slice.try_into()?)
-            }
+            nfcservice::CardDetail::Plain(uuid) => config.card_ids.contains((&*uuid).try_into()?),
         };
 
         if allowed {
@@ -88,7 +78,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 }
             };
 
-            keyturner.run_action(action).await?.lock_state;
+            keyturner.run_action(action).await?;
         } else {
             println!("Unknown ID");
         }

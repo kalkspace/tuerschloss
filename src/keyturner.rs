@@ -31,7 +31,7 @@ impl Keyturner {
     }
 
     pub async fn run_action(
-        self: &mut Self,
+        &mut self,
         action: LockAction,
     ) -> Result<KeyturnerState, anyhow::Error> {
         self.authenticated_client
