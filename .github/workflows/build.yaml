@@ -28,7 +28,7 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: tuerschloss-${{ matrix.target }}
-          path: target/${{ matrix.target }}/tuerschloss
+          path: target/${{ matrix.target }}/release/tuerschloss
 
   lint:
     name: Lint
