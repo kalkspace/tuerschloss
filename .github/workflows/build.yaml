@@ -3,7 +3,7 @@ name: CI
 on:
   push: {}
   schedule:
-    - "5 4 * * 5" # At 04:05 on Friday.
+    - cron: "5 4 * * 5" # At 04:05 on Friday.
 
 jobs:
   build:
