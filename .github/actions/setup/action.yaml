@@ -1,0 +1,14 @@
+name: setup
+description: Setup build time dependencies
+inputs:
+  rust-components:
+    description: Additional rust toolchain components to install
+    default: ""
+runs:
+  using: "composite"
+  steps:
+    - run: sudo apt-get -y install libdbus-1-dev libpcsclite-dev
+      shell: bash
+    - uses: dtolnay/rust-toolchain@stable # settings from `rust-toolchain.toml`
+      with:
+        components: ${{ inputs.rust-components }}
