@@ -49,6 +49,8 @@ jobs:
     runs-on: ubuntu-22.04
     needs: [build, lint]
     if: startsWith(github.ref, 'refs/tags/')
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/download-artifact@v3
         with:
