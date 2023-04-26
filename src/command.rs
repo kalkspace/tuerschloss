@@ -83,6 +83,7 @@ pub enum LockAction {
     FobAction1,
     FobAction2,
     FobAction3,
+    Unknown(u8),
 }
 
 impl From<LockAction> for u8 {
@@ -97,6 +98,7 @@ impl From<LockAction> for u8 {
             LockAction::FobAction1 => 0x81,
             LockAction::FobAction2 => 0x82,
             LockAction::FobAction3 => 0x83,
+            LockAction::Unknown(id) => id,
         }
     }
 }
@@ -115,7 +117,7 @@ impl TryFrom<u8> for LockAction {
             0x81 => LockAction::FobAction1,
             0x82 => LockAction::FobAction2,
             0x83 => LockAction::FobAction3,
-            _ => return Err(anyhow!("Unexpected lock action")),
+            id => LockAction::Unknown(id),
         };
         Ok(action)
     }
