@@ -1,0 +1,12 @@
+[Unit]
+Description=Tuerschloss
+
+[Service]
+Type=exec
+ExecStart=/usr/local/bin/tuerschloss
+User=tuerschloss
+Restart=always
+WorkingDirectory=/etc/tuerschloss
+
+[Install]
+WantedBy=multi-user.target
