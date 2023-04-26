@@ -5,7 +5,6 @@ use client::Client;
 use command::LockAction;
 use futures_util::StreamExt;
 use keyturner::Keyturner;
-use nfc_stream;
 use pairing::{AuthInfo, PairingClient};
 use serde::Deserialize;
 use tokio::fs::read_to_string;
