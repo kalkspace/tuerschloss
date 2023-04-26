@@ -79,6 +79,8 @@ async fn main() -> Result<(), anyhow::Error> {
             };
 
             keyturner.run_action(action).await?;
+
+            stream.forward(futures::sink::drain());
         } else {
             println!("Unknown ID");
         }
