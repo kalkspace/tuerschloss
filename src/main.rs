@@ -80,7 +80,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
             keyturner.run_action(action).await?;
 
-            stream.forward(futures::sink::drain());
+            while futures_util::poll!(stream.next()).is_ready() {}
         } else {
             println!("Unknown ID");
         }
