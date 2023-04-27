@@ -4,7 +4,6 @@ use anyhow::anyhow;
 use client::Client;
 use command::LockAction;
 use futures_util::StreamExt;
-use getraenkekassengeraete::nfcservice;
 use keyturner::Keyturner;
 use pairing::{AuthInfo, PairingClient};
 use serde::Deserialize;
@@ -35,7 +34,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     sodiumoxide::init().map_err(|_| anyhow!("Failed to initialize sodiumoxide..."))?;
 
-    let stream = nfcservice::run().unwrap();
+    let stream = nfc_stream::run().unwrap();
     tokio::pin!(stream);
 
     let connected_client = UnconnectedClient::new(LOCK_ADDRESS.into())
@@ -62,8 +61,8 @@ async fn main() -> Result<(), anyhow::Error> {
         };
 
         let allowed = match item {
-            nfcservice::CardDetail::MeteUuid(uuid) => config.phone_ids.contains(&uuid),
-            nfcservice::CardDetail::Plain(uuid) => config.card_ids.contains((&*uuid).try_into()?),
+            nfc_stream::CardDetail::MeteUuid(uuid) => config.phone_ids.contains(&uuid),
+            nfc_stream::CardDetail::Plain(uuid) => config.card_ids.contains((&*uuid).try_into()?),
         };
 
         if allowed {

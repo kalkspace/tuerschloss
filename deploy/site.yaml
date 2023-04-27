@@ -1,0 +1,66 @@
+---
+- name: Setup system
+  hosts: all
+  vars:
+    allowed_users: # github
+      - mraerino
+      - raketenlurch
+      - m0ppers
+      - jthurner
+      - ansgarprause
+  tasks:
+    - name: Fetch SSH keys
+      uri:
+        url: https://github.com/{{ item }}.keys
+        return_content: yes
+      register: github_keys
+      loop: "{{ allowed_users }}"
+      check_mode: no
+    - name: Configure SSH keys
+      ansible.posix.authorized_key:
+        user: root
+        state: present
+        exclusive: true
+        key: "{{ github_keys.results | map(attribute='content') | join('\n') }}"
+
+- name: Install tuerschloss service
+  hosts: all
+  vars:
+    github_release: v0.0.0-test5
+  tasks:
+    - name: Install dependencies
+      package:
+        name:
+          - libdbus-1-3
+          - libpcsclite1
+          - pcscd
+          - pcsc-tools
+        state: present
+    - name: Create service user
+      user:
+        name: tuerschloss
+        shell: /bin/false
+        create_home: false
+        system: true
+    - name: Download binary
+      get_url:
+        url: "https://github.com/kalkspace/tuerschloss/releases/download/{{ github_release }}/tuerschloss"
+        dest: "/usr/local/bin/tuerschloss"
+        mode: 0775
+        owner: tuerschloss
+    - name: Create systemd service
+      copy:
+        src: files/tuerschloss.service
+        dest: /etc/systemd/system/tuerschloss.service
+      notify: systemd_daemon_reload
+    - name: Start systemd service
+      service:
+        name: tuerschloss
+        enabled: true
+        state: started
+  handlers:
+    - name: systemd_daemon_reload
+      systemd:
+        name: tuerschloss
+        state: restarted
+        daemon_reload: true
