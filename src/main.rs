@@ -78,6 +78,9 @@ async fn main() -> Result<(), anyhow::Error> {
             };
 
             keyturner.run_action(action).await?;
+
+            // We drain the stream to prevent accidental duplicate actions
+            while futures_util::poll!(stream.next()).is_ready() {}
         } else {
             println!("Unknown ID");
         }
