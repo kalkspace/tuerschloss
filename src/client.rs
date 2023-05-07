@@ -6,9 +6,11 @@ use bluez_async::{
 use futures_util::StreamExt;
 use std::{future::Future, sync::Arc};
 use tokio::sync::mpsc;
+use tracing::info;
 
 use crate::command::Command;
 
+#[derive(Debug)]
 pub struct Client {
     session: Arc<BluetoothSession>,
     device: DeviceInfo,
@@ -33,12 +35,12 @@ impl UnconnectedClient {
     pub async fn connect(self) -> Result<Client, anyhow::Error> {
         let (_, sess) = BluetoothSession::new().await?;
 
-        println!("looking for device");
+        info!("looking for device");
         let device = self.discover_device(&sess).await?;
-        println!("found my device: {:?}", device);
+        info!("found my device: {:?}", device);
 
         retry(5, || sess.connect(&device.id)).await?;
-        println!("connected!");
+        info!("connected!");
 
         Ok(Client {
             session: Arc::new(sess),
@@ -56,20 +58,20 @@ impl UnconnectedClient {
         let device = match device {
             Some(dev) => dev,
             None => {
-                println!("starting to scan...");
+                info!("starting to scan...");
                 sess.start_discovery().await?;
 
                 let events = sess.event_stream().await?;
                 let info = events
                     .filter_map(|ev| {
-                        println!("got event: {:?}", ev);
+                        info!("got even: {:?}", ev);
                         Box::pin(async {
                             if let BluetoothEvent::Device {
                                 event: DeviceEvent::Discovered,
                                 id,
                             } = ev
                             {
-                                println!("Discovered {}", id);
+                                info!("Discovered {}", id);
                                 let info = sess.get_device_info(&id).await.unwrap();
                                 if info.mac_address == self.mac_addr {
                                     return Some(info);
@@ -127,21 +129,21 @@ impl Client {
             .into_iter()
             .find(|c| c.uuid.to_string() == characteristic_id)
             .ok_or_else(|| anyhow!("characteristic not found"))?;
-        println!("characteristic found: {:?}", characteristic);
+        info!("characteristic found: {:?}", characteristic);
 
         let mut events = self.session.event_stream().await?;
         let (gdio_tx, gdio_rx) = mpsc::channel(100);
         let bg_characteristic_id = characteristic.id.clone();
         tokio::spawn(async move {
             while let Some(event) = events.next().await {
-                println!("Got event: {:?}", event);
+                info!("Got event: {:?}", event);
                 if let BluetoothEvent::Characteristic {
                     event: CharacteristicEvent::Value { value },
                     id,
                 } = event
                 {
                     if id == bg_characteristic_id {
-                        println!("Value: {:02X?}", value);
+                        info!("Value: {:02X?}", value);
                         if gdio_tx.send(value).await.is_err() {
                             eprintln!("failed to send into channel!");
                         }

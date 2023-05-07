@@ -8,7 +8,7 @@ use keyturner::Keyturner;
 use pairing::{AuthInfo, PairingClient};
 use serde::Deserialize;
 use tokio::fs::read_to_string;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, event, info, warn, Level};
 use tracing_subscriber;
 
 use crate::client::UnconnectedClient;
@@ -29,6 +29,14 @@ struct Config {
     card_ids: Vec<[u8; 4]>,
 }
 
+// only exists to be able to return Client in the success case and
+// tracing::error in the error case
+/*#[derive(Debug)]
+enum OutputType<'a> {
+    Output(Client),
+    Error(tracing::Event<'a>),
+}*/
+
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     // initialize logger
@@ -46,10 +54,9 @@ async fn main() -> Result<(), anyhow::Error> {
     let stream = nfc_stream::run().unwrap();
     tokio::pin!(stream);
 
-    let connected_client = match UnconnectedClient::new(LOCK_ADDRESS.into()).connect().await {
-        Ok(connected_client) => connected_client,
-        Err(err) => error!("{}", err),
-    };
+    let connected_client = UnconnectedClient::new(LOCK_ADDRESS.into())
+        .connect()
+        .await?;
 
     let auth_info = AuthInfo::read_from_file("auth-info.json").await?;
 

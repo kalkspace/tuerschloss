@@ -1,6 +1,7 @@
 use std::convert::TryInto;
 
 use anyhow::anyhow;
+use tracing::info;
 
 use crate::{
     client::Client,
@@ -71,7 +72,7 @@ impl Keyturner {
                 Command::Status(command::StatusCode::Complete) => break,
                 Command::ErrorReport { code, .. } => return Err(code.into()),
                 Command::KeyturnerStates(state) => {
-                    println!("KeyturnerState: {:?}", state);
+                    info!("KeyturnerState: {:?}", state);
                     last_state = state;
                 }
                 _ => return Err(anyhow!("Unexpected command")),

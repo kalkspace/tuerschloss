@@ -13,6 +13,7 @@ use tokio::{
     fs::{self, File},
     io::AsyncWriteExt,
 };
+use tracing::info;
 
 use crate::{
     client::{CharacteristicClient, Client},
@@ -54,7 +55,7 @@ impl PairingClient {
         let pub_key_request = Command::RequestData(Command::PublicKey(Vec::new()).id());
 
         self.client.write(pub_key_request).await?;
-        println!("value written");
+        info!("value written");
 
         // 4. SL sends its public key via multiple indications on GDIO
         let cmd = self.client.receive().await?;
@@ -76,7 +77,7 @@ impl PairingClient {
 
         // 9. SL sends Challenge command via multiple indications on GDIO
         let cmd = self.client.receive().await?;
-        println!("Got response: {:?}", cmd);
+        info!("Got response: {:?}", cmd);
 
         let challenge = match cmd {
             Command::Challenge(challenge) => challenge.try_into().map_err(|c: Vec<u8>| {
@@ -95,12 +96,12 @@ impl PairingClient {
         // 13. CL writes Authorization Authenticator command with authenticator a to GDIO
         let auth_authenticator = Command::AuthorizationAuthenticator(authenticator);
         self.client.write(auth_authenticator).await?;
-        println!("13 done");
+        info!("13 done");
 
         // 15. SL sends Challenge command via multiple indications on GDIO
         let cmd = self.client.receive().await?;
-        println!("Got response: {:?}", cmd);
-        println!("15 done");
+        info!("Got response: {:?}", cmd);
+        info!("15 done");
 
         // 16. CL writes Authorization Data command to GDIO
         let challenge = match cmd {
@@ -149,7 +150,7 @@ impl PairingClient {
 
         // 19. SL sends Authorization-ID command via multiple indications on GDIO
         let cmd = self.client.receive().await?;
-        println!("Got response: {:?}", cmd);
+        info!("Got response: {:?}", cmd);
 
         // 20. CL verifies the received authenticator
         let (lock_nonce, authorization_id) = match cmd {
@@ -189,7 +190,7 @@ impl PairingClient {
 
         // 22. SL sends Status COMPLETE via multiple indications on GDIO
         let cmd = self.client.receive().await?;
-        println!("Got response: {:?}", cmd);
+        info!("Got response: {:?}", cmd);
 
         match cmd {
             Command::Status(code) => match code {
@@ -217,12 +218,12 @@ impl PairingClient {
         let mut r = Vec::new();
         r.extend(payload.into_iter());
         r.extend_from_slice(challenge);
-        println!("10 done");
+        info!("10 done");
 
         // 11. CL calculates the authenticator a of r using function h1
         let auth_key = hmacsha256::Key::from_slice(shared_key.as_ref()).unwrap();
         let authenticator = hmacsha256::authenticate(&r, &auth_key);
-        println!("11 done");
+        info!("11 done");
 
         authenticator.0
     }

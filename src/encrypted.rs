@@ -1,5 +1,6 @@
 use anyhow::anyhow;
 use sodiumoxide::crypto::box_::{gen_nonce, open_precomputed, seal_precomputed, Nonce};
+use tracing::info;
 
 use crate::{client::CharacteristicClient, command::Command, pairing::AuthInfo};
 
@@ -15,7 +16,7 @@ impl AuthenticatedClient {
 
     pub async fn write(&self, command: Command) -> Result<(), anyhow::Error> {
         let payload = command.into_bytes_with_auth(self.auth_info.authorization_id);
-        println!("sending plaintext: {:02X?}", payload);
+        info!("sending plaintext: {:02X?}", payload);
 
         let nonce = gen_nonce();
         let ciphertext = seal_precomputed(&payload, &nonce, &self.auth_info.shared_key);
@@ -26,7 +27,7 @@ impl AuthenticatedClient {
         let ciphertext_len = (ciphertext.len() as u16).to_le_bytes();
         message.extend_from_slice(&ciphertext_len);
         message.extend_from_slice(&ciphertext);
-        println!("sending full message: {:02X?}", message);
+        info!("sending full message: {:02X?}", message);
 
         self.client.write_raw(message).await?;
 
@@ -45,7 +46,7 @@ impl AuthenticatedClient {
         let decrypted_bytes = open_precomputed(encrypted_bytes, &nonce, &self.auth_info.shared_key)
             .map_err(|_| anyhow!("Failed to decrypt message"))?;
 
-        println!("received plaintext: {:02X?}", decrypted_bytes);
+        info!("received plaintext: {:02X?}", decrypted_bytes);
 
         let (cmd, _auth_id) = Command::parse_with_auth(&decrypted_bytes)?;
 
