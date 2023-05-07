@@ -8,6 +8,8 @@ use keyturner::Keyturner;
 use pairing::{AuthInfo, PairingClient};
 use serde::Deserialize;
 use tokio::fs::read_to_string;
+use tracing::{debug, error, info, warn};
+use tracing_subscriber;
 
 use crate::client::UnconnectedClient;
 
@@ -29,17 +31,25 @@ struct Config {
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
+    // initialize logger
+    let subscriber = tracing_subscriber::FmtSubscriber::new();
+    tracing::subscriber::set_global_default(subscriber)?;
+
     let config = read_to_string("config.json").await?;
     let config: Config = serde_json::from_str(&config)?;
 
-    sodiumoxide::init().map_err(|_| anyhow!("Failed to initialize sodiumoxide..."))?;
+    match sodiumoxide::init() {
+        Ok(_) => (),
+        Err(_) => error!("Failed to initialize sodiumoxide..."),
+    }
 
     let stream = nfc_stream::run().unwrap();
     tokio::pin!(stream);
 
-    let connected_client = UnconnectedClient::new(LOCK_ADDRESS.into())
-        .connect()
-        .await?;
+    let connected_client = match UnconnectedClient::new(LOCK_ADDRESS.into()).connect().await {
+        Ok(connected_client) => connected_client,
+        Err(err) => error!("{}", err),
+    };
 
     let auth_info = AuthInfo::read_from_file("auth-info.json").await?;
 
