@@ -8,8 +8,7 @@ use keyturner::Keyturner;
 use pairing::{AuthInfo, PairingClient};
 use serde::Deserialize;
 use tokio::fs::read_to_string;
-use tracing::{debug, error, event, info, warn, Level};
-use tracing_subscriber;
+use tracing::info;
 
 use crate::client::UnconnectedClient;
 
@@ -29,27 +28,13 @@ struct Config {
     card_ids: Vec<[u8; 4]>,
 }
 
-// only exists to be able to return Client in the success case and
-// tracing::error in the error case
-/*#[derive(Debug)]
-enum OutputType<'a> {
-    Output(Client),
-    Error(tracing::Event<'a>),
-}*/
-
+// only log error cases, if you're going to ignore the error otherwise
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    // initialize logger
-    let subscriber = tracing_subscriber::FmtSubscriber::new();
-    tracing::subscriber::set_global_default(subscriber)?;
-
     let config = read_to_string("config.json").await?;
     let config: Config = serde_json::from_str(&config)?;
 
-    match sodiumoxide::init() {
-        Ok(_) => (),
-        Err(_) => error!("Failed to initialize sodiumoxide..."),
-    }
+    sodiumoxide::init().map_err(|_| anyhow!("Failed to initialize sodiumoxide..."))?;
 
     let stream = nfc_stream::run().unwrap();
     tokio::pin!(stream);
@@ -65,7 +50,7 @@ async fn main() -> Result<(), anyhow::Error> {
     loop {
         let item = stream.next().await;
 
-        println!("{:?}", item);
+        info!("{:?}", item);
 
         let Some(item) = item else {
             // We expect the item to always be Some because the Stream is never closed
@@ -89,7 +74,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 command::LockState::Locked => LockAction::Unlock,
                 command::LockState::Unlocked => LockAction::Lock,
                 state => {
-                    println!("Unable to perform action. Invalid state: {:?}", state);
+                    info!("Unable to perform action. Invalid state: {:?}", state);
                     continue;
                 }
             };
@@ -99,7 +84,7 @@ async fn main() -> Result<(), anyhow::Error> {
             // We drain the stream to prevent accidental duplicate actions
             while futures_util::poll!(stream.next()).is_ready() {}
         } else {
-            println!("Unknown ID");
+            info!("Unknown ID");
         }
     }
 }
