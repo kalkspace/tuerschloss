@@ -31,6 +31,9 @@ struct Config {
 // only log error cases, if you're going to ignore the error otherwise
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
+    tracing_subscriber::fmt::init();
+
+    info!("test log zum testen");
     let config = read_to_string("config.json").await?;
     let config: Config = serde_json::from_str(&config)?;
 

@@ -6,7 +6,7 @@ use bluez_async::{
 use futures_util::StreamExt;
 use std::{future::Future, sync::Arc};
 use tokio::sync::mpsc;
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::command::Command;
 
@@ -129,21 +129,22 @@ impl Client {
             .into_iter()
             .find(|c| c.uuid.to_string() == characteristic_id)
             .ok_or_else(|| anyhow!("characteristic not found"))?;
-        info!("characteristic found: {:?}", characteristic);
+
+        debug!("characteristic found: {:?}", characteristic);
 
         let mut events = self.session.event_stream().await?;
         let (gdio_tx, gdio_rx) = mpsc::channel(100);
         let bg_characteristic_id = characteristic.id.clone();
         tokio::spawn(async move {
             while let Some(event) = events.next().await {
-                info!("Got event: {:?}", event);
+                debug!("Got event: {:?}", event);
                 if let BluetoothEvent::Characteristic {
                     event: CharacteristicEvent::Value { value },
                     id,
                 } = event
                 {
                     if id == bg_characteristic_id {
-                        info!("Value: {:02X?}", value);
+                        debug!("Value: {:02X?}", value);
                         if gdio_tx.send(value).await.is_err() {
                             eprintln!("failed to send into channel!");
                         }
