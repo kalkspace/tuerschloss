@@ -6,7 +6,7 @@ use bluez_async::{
 use futures_util::StreamExt;
 use std::{future::Future, sync::Arc};
 use tokio::sync::mpsc;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::command::Command;
 
@@ -39,7 +39,7 @@ impl UnconnectedClient {
         let device = self.discover_device(&sess).await?;
         info!("found my device: {:?}", device);
 
-        retry(5, || sess.connect(&device.id)).await?;
+        retry(|| sess.connect(&device.id)).await?;
         info!("connected!");
 
         Ok(Client {
@@ -93,19 +93,18 @@ impl UnconnectedClient {
     }
 }
 
-async fn retry<F, Fut, O, E>(limit: usize, mut f: F) -> Result<O, anyhow::Error>
+async fn retry<F, Fut, O, E>(mut f: F) -> Result<O, anyhow::Error>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<O, E>>,
     E: std::error::Error,
 {
-    for _ in 0..limit {
+    loop {
         match f().await {
             Ok(r) => return Ok(r),
-            Err(e) => eprintln!("Retrying after error: {:?}", e),
+            Err(error) => warn!(?error, "Retrying after error"),
         }
     }
-    Err(anyhow!("Retry limit reached"))
 }
 
 impl Client {
@@ -171,7 +170,7 @@ impl CharacteristicClient {
     }
 
     pub async fn write_raw(&self, bytes: impl Into<Vec<u8>>) -> Result<(), anyhow::Error> {
-        retry(5, || self.session.connect(&self.device.id)).await?;
+        retry(|| self.session.connect(&self.device.id)).await?;
         self.session
             .write_characteristic_value(&self.characteristic.id, bytes)
             .await?;
