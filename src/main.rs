@@ -8,6 +8,7 @@ use keyturner::Keyturner;
 use pairing::{AuthInfo, PairingClient};
 use serde::Deserialize;
 use tokio::fs::read_to_string;
+use tracing::info;
 
 use crate::client::UnconnectedClient;
 
@@ -27,8 +28,12 @@ struct Config {
     card_ids: Vec<[u8; 4]>,
 }
 
+// only log error cases, if you're going to ignore the error otherwise
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
+    tracing_subscriber::fmt::init();
+
+    info!("test log zum testen");
     let config = read_to_string("config.json").await?;
     let config: Config = serde_json::from_str(&config)?;
 
@@ -48,7 +53,7 @@ async fn main() -> Result<(), anyhow::Error> {
     loop {
         let item = stream.next().await;
 
-        println!("{:?}", item);
+        info!("{:?}", item);
 
         let Some(item) = item else {
             // We expect the item to always be Some because the Stream is never closed
@@ -72,7 +77,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 command::LockState::Locked => LockAction::Unlock,
                 command::LockState::Unlocked => LockAction::Lock,
                 state => {
-                    println!("Unable to perform action. Invalid state: {:?}", state);
+                    info!("Unable to perform action. Invalid state: {:?}", state);
                     continue;
                 }
             };
@@ -82,7 +87,7 @@ async fn main() -> Result<(), anyhow::Error> {
             // We drain the stream to prevent accidental duplicate actions
             while futures_util::poll!(stream.next()).is_ready() {}
         } else {
-            println!("Unknown ID");
+            info!("Unknown ID");
         }
     }
 }
