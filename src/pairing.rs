@@ -64,7 +64,7 @@ impl PairingClient {
                 PublicKey::from_slice(&key).ok_or_else(|| anyhow!("Invalid key..."))?
             }
             Command::ErrorReport { code, .. } => return Err(code.into()),
-            _ => return Err(anyhow!("Unknow command...")),
+            _ => return Err(anyhow!("Unknown command...")),
         };
 
         // 7. Both sides calculate DH Key k using function dh1
