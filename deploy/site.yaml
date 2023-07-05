@@ -26,7 +26,7 @@
 - name: Install tuerschloss service
   hosts: all
   vars:
-    github_release: v0.0.0-test5
+    github_release: v0.1.0
   tasks:
     - name: Install dependencies
       package:
@@ -44,7 +44,7 @@
         system: true
     - name: Download binary
       get_url:
-        url: "https://github.com/kalkspace/tuerschloss/releases/download/{{ github_release }}/tuerschloss"
+        url: "https://github.com/kalkspace/tuerschloss/releases/download/{{ github_release }}/tuerschloss-aarch64-unknown-linux-gnu"
         dest: "/usr/local/bin/tuerschloss"
         mode: 0775
         owner: tuerschloss
