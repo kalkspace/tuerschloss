@@ -59,7 +59,7 @@ impl UnconnectedClient {
 
         while let Some(discovered_device) = scan.next().await {
             debug!(
-                "{} - {}: {:?}",
+                "{} - {:?}: {:?}",
                 discovered_device
                     .device
                     .name()
