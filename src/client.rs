@@ -72,7 +72,7 @@ impl UnconnectedClient {
                 .device
                 .name()
                 .as_deref()
-                .map(|name| name == &self.name)
+                .map(|name| name == self.name)
                 .unwrap_or(false)
             {
                 return Ok(discovered_device.device);
