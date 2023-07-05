@@ -30,7 +30,7 @@ pub struct PairingClient {
 
 base64_serde_type!(Base64Serde, STANDARD);
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AuthInfo {
     pub authorization_id: u32,
     #[serde(serialize_with = "serialize_key", deserialize_with = "deserialize_key")]

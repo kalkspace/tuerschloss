@@ -42,14 +42,22 @@ async fn main() -> Result<(), anyhow::Error> {
     let stream = nfc_stream::run().unwrap();
     tokio::pin!(stream);
 
-    let connected_client = UnconnectedClient::new(LOCK_NAME.into()).connect().await?;
+    let mut connected_client = UnconnectedClient::new(LOCK_NAME.into()).connect().await?;
 
     let auth_info = AuthInfo::read_from_file("auth-info.json").await?;
 
-    let mut keyturner = Keyturner::new(auth_info, connected_client).await?;
+    let mut keyturner = Keyturner::new(auth_info.clone(), &connected_client).await?;
 
     loop {
         let item = stream.next().await;
+
+        if !connected_client.is_connected().await {
+            info!("Reconnecting client");
+            connected_client = UnconnectedClient::with_id(connected_client.device_id())
+                .connect()
+                .await?;
+            keyturner = Keyturner::new(auth_info.clone(), &connected_client).await?;
+        }
 
         info!("{:?}", item);
 
