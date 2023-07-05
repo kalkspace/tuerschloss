@@ -2,7 +2,7 @@ use anyhow::anyhow;
 
 use bluest::{Adapter, Characteristic, Device, DeviceId};
 use futures_util::StreamExt;
-use std::{future::Future, sync::Arc};
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
@@ -20,7 +20,7 @@ pub enum UnconnectedClient {
 }
 
 pub struct CharacteristicClient {
-    adapter: Arc<Adapter>,
+    _adapter: Arc<Adapter>,
     responses: mpsc::Receiver<Vec<u8>>,
     characteristic: Arc<Characteristic>,
     device: Device,
@@ -148,7 +148,7 @@ impl Client {
         });
 
         Ok(CharacteristicClient {
-            adapter: Arc::clone(&self.adapter),
+            _adapter: Arc::clone(&self.adapter),
             characteristic,
             device: self.device.clone(),
             responses: rx,
