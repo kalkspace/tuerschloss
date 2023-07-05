@@ -61,7 +61,7 @@ impl UnconnectedClient {
         let name = match &self {
             Self::Name(name) => name,
             Self::DeviceId(device_id) => {
-                return adapter.open_device(&device_id).await.map_err(Into::into)
+                return adapter.open_device(device_id).await.map_err(Into::into)
             }
         };
 
