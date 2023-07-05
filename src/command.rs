@@ -19,15 +19,76 @@ pub enum ErrorCode {
     NotPairing,
     #[error("the received authenticator does not match the own calculated authenticator")]
     BadAuthenticator,
-    #[error("a provided parameter is outside of its valid range")]
-    BadParameter,
     #[error("the maximum number of users has been reached")]
     MaxUser,
+
+    #[error("Returned if the provided authorization id is invalid or the payload could not be decrypted using the shared key for this authorization id")]
+    NotAuthorized,
+    #[error("Returned if the provided pin does not match the stored one.")]
+    BadPin,
+    #[error("Returned if the provided nonce does not match the last stored one of this authorization id or has already been used before.")]
+    BadNonce,
+    #[error("Returned if a provided parameter is outside of its valid range.")]
+    BadParameter,
+    #[error(
+        "Returned if the desired authorization id could not be deleted because it does not exist."
+    )]
+    InvalidAuthId,
+    #[error("Returned if the provided authorization id is currently disabled.")]
+    Disabled,
+    #[error("Returned if the request has been forwarded by the Nuki Bridge and the provided authorization id has not been granted remote access.")]
+    RemoteNotAllowed,
+    #[error("Returned if the provided authorization id has not been granted access at the current time.")]
+    TimeNotAllowed,
+    #[error("Returned if an invalid pin has been provided too often")]
+    TooManyPinAttempts,
+    #[error("Returned if no more entries can be stored")]
+    TooManyEntries,
+    #[error("Returned if a Keypad Code should be added but the given code already exists.")]
+    CodeAlreadyExists,
+    #[error("Returned if a Keypad Code that has been entered is invalid.")]
+    CodeInvalid,
+    #[error("Returned if an invalid pin has been provided multiple times.")]
+    CodeInvalidTimeout1,
+    #[error("Returned if an invalid pin has been provided multiple times.")]
+    CodeInvalidTimeout2,
+    #[error("Returned if an invalid pin has been provided multiple times.")]
+    CodeInvalidTimeout3,
+    #[error("Returned on an incoming auto unlock request and if a lock action has already been executed within short time.")]
+    AutoUnlockTooRecent,
+    #[error("Returned on an incoming unlock request if the request has been forwarded by the Nuki Bridge and the Smart Lock is unsure about its actual lock position.")]
+    PositionUnknown,
+    #[error("Returned if the motor blocks.")]
+    MotorBlocked,
+    #[error("Returned if there is a problem with the clutch during motor movement.")]
+    ClutchFailure,
+    #[error("Returned if the motor moves for a given period of time but did not block.")]
+    MotorTimeout,
+    #[error(
+        "Returned on any lock action via bluetooth if there is already a lock action processing."
+    )]
+    Busy,
+    #[error("Returned on any lock action or during calibration if the user canceled the motor movement by pressing the button")]
+    Canceled,
+    #[error("Returned on any lock action if the Smart Lock has not yet been calibrated")]
+    NotCalibrated,
+    #[error("Returned during calibration if the internal position database is not able to store any more values")]
+    MotorPositionLimit,
+    #[error("Returned if the motor blocks because of low voltage.")]
+    MotorLowVoltage,
+    #[error("Returned if the power drain during motor movement is zero")]
+    MotorPowerFailure,
+    #[error("Returned if the power drain during clutch movement is zero")]
+    ClutchPowerFailure,
+    #[error("Returned on a calibration request if the battery voltage is too low and a calibration will therefore not be started")]
+    VoltageTooLow,
+    #[error("Returned during any motor action if a firmware update is mandatory")]
+    FirmwareUpdateNeeded,
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("Read unknown error code")]
-pub struct UnknownErrorCode;
+#[error("Read unknown error code: {0}")]
+pub struct UnknownErrorCode(u8);
 
 impl TryFrom<u8> for ErrorCode {
     type Error = UnknownErrorCode;
@@ -37,11 +98,43 @@ impl TryFrom<u8> for ErrorCode {
             0xFD => Self::BadCRC,
             0xFE => Self::BadLength,
             0xFF => Self::Unknown,
+
             0x10 => Self::NotPairing,
             0x11 => Self::BadAuthenticator,
             0x12 => Self::BadParameter,
             0x13 => Self::MaxUser,
-            _ => return Err(UnknownErrorCode),
+
+            0x20 => Self::NotAuthorized,
+            0x21 => Self::BadPin,
+            0x22 => Self::BadNonce,
+            0x23 => Self::BadParameter,
+            0x24 => Self::InvalidAuthId,
+            0x25 => Self::Disabled,
+            0x26 => Self::RemoteNotAllowed,
+            0x27 => Self::TimeNotAllowed,
+            0x28 => Self::TooManyPinAttempts,
+            0x29 => Self::TooManyEntries,
+            0x2A => Self::CodeAlreadyExists,
+            0x2B => Self::CodeInvalid,
+            0x2C => Self::CodeInvalidTimeout1,
+            0x2D => Self::CodeInvalidTimeout2,
+            0x2E => Self::CodeInvalidTimeout3,
+            0x40 => Self::AutoUnlockTooRecent,
+            0x41 => Self::PositionUnknown,
+            0x42 => Self::MotorBlocked,
+            0x43 => Self::ClutchFailure,
+            0x44 => Self::MotorTimeout,
+            0x45 => Self::Busy,
+            0x46 => Self::Canceled,
+            0x47 => Self::NotCalibrated,
+            0x48 => Self::MotorPositionLimit,
+            0x49 => Self::MotorLowVoltage,
+            0x4A => Self::MotorPowerFailure,
+            0x4B => Self::ClutchPowerFailure,
+            0x4C => Self::VoltageTooLow,
+            0x4D => Self::FirmwareUpdateNeeded,
+
+            code => return Err(UnknownErrorCode(code)),
         };
         Ok(e)
     }
@@ -602,21 +695,11 @@ where
             .try_into()
             .map_err(|_| anyhow!("Not enough bytes"))?,
     );
-    let month = *iter
-        .next()
-        .ok_or_else(|| anyhow!("Not enough bytes"))?;
-    let day = *iter
-        .next()
-        .ok_or_else(|| anyhow!("Not enough bytes"))?;
-    let hour = *iter
-        .next()
-        .ok_or_else(|| anyhow!("Not enough bytes"))?;
-    let minute = *iter
-        .next()
-        .ok_or_else(|| anyhow!("Not enough bytes"))?;
-    let second = *iter
-        .next()
-        .ok_or_else(|| anyhow!("Not enough bytes"))?;
+    let month = *iter.next().ok_or_else(|| anyhow!("Not enough bytes"))?;
+    let day = *iter.next().ok_or_else(|| anyhow!("Not enough bytes"))?;
+    let hour = *iter.next().ok_or_else(|| anyhow!("Not enough bytes"))?;
+    let minute = *iter.next().ok_or_else(|| anyhow!("Not enough bytes"))?;
+    let second = *iter.next().ok_or_else(|| anyhow!("Not enough bytes"))?;
     let timezone_offset = i16::from_le_bytes(
         iter.take(2)
             .cloned()
