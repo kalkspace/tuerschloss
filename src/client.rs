@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 
-use bluest::{Adapter, Characteristic, Device};
+use bluest::{Adapter, Characteristic, Device, DeviceId};
 use futures_util::StreamExt;
 use std::{future::Future, sync::Arc};
 use tokio::sync::mpsc;
@@ -14,8 +14,9 @@ pub struct Client {
     device: Device,
 }
 
-pub struct UnconnectedClient {
-    name: String,
+pub enum UnconnectedClient {
+    Name(String),
+    DeviceId(DeviceId),
 }
 
 pub struct CharacteristicClient {
@@ -27,7 +28,11 @@ pub struct CharacteristicClient {
 
 impl UnconnectedClient {
     pub fn new(name: String) -> Self {
-        Self { name }
+        Self::Name(name)
+    }
+
+    pub fn with_id(device_id: DeviceId) -> Self {
+        Self::DeviceId(device_id)
     }
 
     pub async fn connect(self) -> Result<Client, anyhow::Error> {
@@ -53,6 +58,13 @@ impl UnconnectedClient {
     }
 
     async fn discover_device(&self, adapter: &Adapter) -> Result<Device, anyhow::Error> {
+        let name = match &self {
+            Self::Name(name) => name,
+            Self::DeviceId(device_id) => {
+                return adapter.open_device(&device_id).await.map_err(Into::into)
+            }
+        };
+
         info!("starting scan");
         let mut scan = adapter.scan(&[]).await?;
         info!("scan started");
@@ -72,7 +84,7 @@ impl UnconnectedClient {
                 .device
                 .name()
                 .as_deref()
-                .map(|name| name == self.name)
+                .map(|n| n == name)
                 .unwrap_or(false)
             {
                 return Ok(discovered_device.device);
@@ -83,22 +95,15 @@ impl UnconnectedClient {
     }
 }
 
-async fn retry<F, Fut, O, E>(limit: usize, mut f: F) -> Result<O, anyhow::Error>
-where
-    F: FnMut() -> Fut,
-    Fut: Future<Output = Result<O, E>>,
-    E: std::error::Error,
-{
-    for _ in 0..limit {
-        match f().await {
-            Ok(r) => return Ok(r),
-            Err(e) => eprintln!("Retrying after error: {:?}", e),
-        }
-    }
-    Err(anyhow!("Retry limit reached"))
-}
-
 impl Client {
+    pub async fn is_connected(&self) -> bool {
+        self.device.is_connected().await
+    }
+
+    pub fn device_id(&self) -> DeviceId {
+        self.device.id()
+    }
+
     pub async fn with_characteristic(
         &self,
         service_id: &str,
@@ -158,11 +163,7 @@ impl CharacteristicClient {
 
     pub async fn write_raw(&self, bytes: impl AsRef<[u8]>) -> Result<(), anyhow::Error> {
         if !self.device.is_connected().await {
-            retry(5, || {
-                debug!("Connecting to device");
-                self.adapter.connect_device(&self.device)
-            })
-            .await?;
+            return Err(anyhow!("Device not connected"));
         }
         self.characteristic.write(bytes.as_ref()).await?;
 

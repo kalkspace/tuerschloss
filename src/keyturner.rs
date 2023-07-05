@@ -19,7 +19,7 @@ pub struct Keyturner {
 }
 
 impl Keyturner {
-    pub async fn new(auth_info: AuthInfo, client: Client) -> Result<Self, anyhow::Error> {
+    pub async fn new(auth_info: AuthInfo, client: &Client) -> Result<Self, anyhow::Error> {
         let characteristic = client
             .with_characteristic(KEY_TURNER_SERVICE, KEY_TURNER_USDIO)
             .await?;
