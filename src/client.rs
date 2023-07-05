@@ -1,95 +1,85 @@
 use anyhow::anyhow;
-use bluez_async::{
-    BluetoothEvent, BluetoothSession, CharacteristicEvent, CharacteristicInfo, DeviceEvent,
-    DeviceInfo, MacAddress,
-};
+
+use bluest::{Adapter, Characteristic, Device};
 use futures_util::StreamExt;
 use std::{future::Future, sync::Arc};
 use tokio::sync::mpsc;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::command::Command;
 
 #[derive(Debug)]
 pub struct Client {
-    session: Arc<BluetoothSession>,
-    device: DeviceInfo,
+    adapter: Arc<Adapter>,
+    device: Device,
 }
 
 pub struct UnconnectedClient {
-    mac_addr: MacAddress,
+    name: String,
 }
 
 pub struct CharacteristicClient {
-    session: Arc<BluetoothSession>,
+    adapter: Arc<Adapter>,
     responses: mpsc::Receiver<Vec<u8>>,
-    characteristic: CharacteristicInfo,
-    device: DeviceInfo,
+    characteristic: Arc<Characteristic>,
+    device: Device,
 }
 
 impl UnconnectedClient {
-    pub fn new(mac_addr: MacAddress) -> Self {
-        Self { mac_addr }
+    pub fn new(name: String) -> Self {
+        Self { name }
     }
 
     pub async fn connect(self) -> Result<Client, anyhow::Error> {
-        let (_, sess) = BluetoothSession::new().await?;
+        let adapter = Adapter::default()
+            .await
+            .ok_or_else(|| anyhow!("Bluetooth adapter not found"))?;
+        adapter.wait_available().await?;
 
         info!("looking for device");
-        let device = self.discover_device(&sess).await?;
+        let device = self.discover_device(&adapter).await?;
         info!("found my device: {:?}", device);
 
-        retry(5, || sess.connect(&device.id)).await?;
+        adapter.connect_device(&device).await?;
         info!("connected!");
 
+        device.pair().await?;
+        info!("paired!");
+
         Ok(Client {
-            session: Arc::new(sess),
+            adapter: Arc::new(adapter),
             device,
         })
     }
 
-    async fn discover_device(&self, sess: &BluetoothSession) -> Result<DeviceInfo, anyhow::Error> {
-        let device = sess
-            .get_devices()
-            .await?
-            .into_iter()
-            .find(|d| d.mac_address == self.mac_addr);
+    async fn discover_device(&self, adapter: &Adapter) -> Result<Device, anyhow::Error> {
+        info!("starting scan");
+        let mut scan = adapter.scan(&[]).await?;
+        info!("scan started");
 
-        let device = match device {
-            Some(dev) => dev,
-            None => {
-                info!("starting to scan...");
-                sess.start_discovery().await?;
-
-                let events = sess.event_stream().await?;
-                let info = events
-                    .filter_map(|ev| {
-                        info!("got even: {:?}", ev);
-                        Box::pin(async {
-                            if let BluetoothEvent::Device {
-                                event: DeviceEvent::Discovered,
-                                id,
-                            } = ev
-                            {
-                                info!("Discovered {}", id);
-                                let info = sess.get_device_info(&id).await.unwrap();
-                                if info.mac_address == self.mac_addr {
-                                    return Some(info);
-                                }
-                            }
-                            None
-                        })
-                    })
-                    .next()
-                    .await
-                    .ok_or_else(|| anyhow!("Device not found!"))?;
-
-                sess.stop_discovery().await?;
-
-                info
+        while let Some(discovered_device) = scan.next().await {
+            debug!(
+                "{} - {:?}: {:?}",
+                discovered_device
+                    .device
+                    .name()
+                    .as_deref()
+                    .unwrap_or("(unknown)"),
+                discovered_device.device.id(),
+                discovered_device.adv_data.services
+            );
+            if discovered_device
+                .device
+                .name()
+                .as_deref()
+                .map(|name| name == self.name)
+                .unwrap_or(false)
+            {
+                return Ok(discovered_device.device);
             }
-        };
-        Ok(device)
+        }
+
+        unreachable!();
     }
 }
 
@@ -114,53 +104,49 @@ impl Client {
         service_id: &str,
         characteristic_id: &str,
     ) -> Result<CharacteristicClient, anyhow::Error> {
-        // look up characteristic
-        let svc = self
-            .session
-            .get_services(&self.device.id)
+        let service = self
+            .device
+            .discover_services()
             .await?
             .into_iter()
-            .find(|s| s.uuid.to_string() == service_id)
-            .ok_or_else(|| anyhow!("Pairing service not found"))?;
-        let characteristic = self
-            .session
-            .get_characteristics(&svc.id)
+            .find(|service| service.uuid().to_string() == service_id)
+            .ok_or_else(|| anyhow!("Service not found"))?;
+
+        let characteristic = service
+            .discover_characteristics()
             .await?
             .into_iter()
-            .find(|c| c.uuid.to_string() == characteristic_id)
-            .ok_or_else(|| anyhow!("characteristic not found"))?;
+            .find(|characteristic| characteristic.uuid().to_string() == characteristic_id)
+            .ok_or_else(|| anyhow!("Characteristic not found"))?;
 
-        debug!("characteristic found: {:?}", characteristic);
+        debug!(
+            "characteristic found: {:?} {:?}",
+            characteristic,
+            characteristic.properties().await?
+        );
 
-        let mut events = self.session.event_stream().await?;
-        let (gdio_tx, gdio_rx) = mpsc::channel(100);
-        let bg_characteristic_id = characteristic.id.clone();
+        let (tx, rx) = mpsc::channel(10);
+
+        let characteristic = Arc::new(characteristic);
+
+        let notify_characteristic = Arc::clone(&characteristic);
         tokio::spawn(async move {
-            while let Some(event) = events.next().await {
-                debug!("Got event: {:?}", event);
-                if let BluetoothEvent::Characteristic {
-                    event: CharacteristicEvent::Value { value },
-                    id,
-                } = event
-                {
-                    if id == bg_characteristic_id {
-                        debug!("Value: {:02X?}", value);
-                        if gdio_tx.send(value).await.is_err() {
-                            eprintln!("failed to send into channel!");
-                        }
-                    }
+            // 2. CL registers itself for indications on GDIO
+            let mut responses = notify_characteristic.notify().await.unwrap();
+            while let Some(bytes) = responses.next().await {
+                match bytes {
+                    Ok(bytes) => tx.send(bytes).await.unwrap(),
+                    Err(e) => warn!(error = ?e, "Error receiving notification"),
                 }
             }
+            info!("Notification stream ended");
         });
 
-        // 2. CL registers itself for indications on GDIO
-        self.session.start_notify(&characteristic.id).await?;
-
         Ok(CharacteristicClient {
-            session: Arc::clone(&self.session),
-            responses: gdio_rx,
+            adapter: Arc::clone(&self.adapter),
             characteristic,
             device: self.device.clone(),
+            responses: rx,
         })
     }
 }
@@ -170,11 +156,15 @@ impl CharacteristicClient {
         self.write_raw(command.into_bytes()).await
     }
 
-    pub async fn write_raw(&self, bytes: impl Into<Vec<u8>>) -> Result<(), anyhow::Error> {
-        retry(5, || self.session.connect(&self.device.id)).await?;
-        self.session
-            .write_characteristic_value(&self.characteristic.id, bytes)
+    pub async fn write_raw(&self, bytes: impl AsRef<[u8]>) -> Result<(), anyhow::Error> {
+        if !self.device.is_connected().await {
+            retry(5, || {
+                debug!("Connecting to device");
+                self.adapter.connect_device(&self.device)
+            })
             .await?;
+        }
+        self.characteristic.write(bytes.as_ref()).await?;
 
         Ok(())
     }
@@ -189,16 +179,6 @@ impl CharacteristicClient {
         self.responses
             .recv()
             .await
-            .ok_or_else(|| anyhow!("GDIO channel closed"))
-    }
-}
-
-impl Drop for CharacteristicClient {
-    fn drop(&mut self) {
-        let session = Arc::clone(&self.session);
-        let characteristic_id = self.characteristic.id.clone();
-        tokio::spawn(async move {
-            session.stop_notify(&characteristic_id).await.ok();
-        });
+            .ok_or_else(|| anyhow!("No data received"))
     }
 }
